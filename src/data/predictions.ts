@@ -1,10 +1,11 @@
 import { GROUP_FIXTURES, type GroupFixture } from './groupSchedule';
+import { KNOCKOUT_KICKOFFS } from './knockoutKickoffs';
 
 export type Confidence = 'high' | 'moderate' | 'low';
 
 export interface MatchPrediction {
   id: string;
-  date: string;
+  kickoff: string;
   slot: number;
   stage: 'group' | 'r32' | 'r16' | 'qf' | 'sf' | 'bronze' | 'final';
   group?: string;
@@ -59,7 +60,7 @@ function mk(
   confidence: Confidence,
   group?: string,
 ): MatchPrediction {
-  return { id, date: '', slot: 0, stage, group, teamA: a, teamB: b, winner, score, confidence, pct: 0 };
+  return { id, kickoff: '', slot: 0, stage, group, teamA: a, teamB: b, winner, score, confidence, pct: 0 };
 }
 
 function variedPct(id: string, confidence: Confidence): number {
@@ -69,14 +70,19 @@ function variedPct(id: string, confidence: Confidence): number {
   return lo + (hash % (hi - lo + 1));
 }
 
-const STAGE_DATES: Record<Exclude<MatchPrediction['stage'], 'group'>, string[]> = {
-  r32: ['2026-06-28', '2026-06-28', '2026-06-28', '2026-06-29', '2026-06-29', '2026-06-29', '2026-06-30', '2026-06-30', '2026-06-30', '2026-07-01', '2026-07-01', '2026-07-01', '2026-07-02', '2026-07-02', '2026-07-02', '2026-07-03'],
-  r16: ['2026-07-04', '2026-07-04', '2026-07-05', '2026-07-05', '2026-07-06', '2026-07-06', '2026-07-07', '2026-07-07'],
-  qf: ['2026-07-09', '2026-07-09', '2026-07-10', '2026-07-11'],
-  sf: ['2026-07-14', '2026-07-15'],
-  bronze: ['2026-07-18'],
-  final: ['2026-07-19'],
-};
+function assignDatesAndPct() {
+  for (const model of MODELS) {
+    const n: Partial<Record<MatchPrediction['stage'], number>> = {};
+    for (const m of model.matches) {
+      if (m.stage === 'group') continue;
+      const i = n[m.stage] ?? 0;
+      m.kickoff = KNOCKOUT_KICKOFFS[m.stage as keyof typeof KNOCKOUT_KICKOFFS][i];
+      m.slot = i;
+      m.pct = variedPct(m.id, m.confidence);
+      n[m.stage] = i + 1;
+    }
+  }
+}
 
 export const TOURNAMENT_START = '2026-06-11';
 export const TOURNAMENT_END = '2026-07-19';
@@ -94,20 +100,6 @@ function tournamentDates(start: string, end: string): string[] {
     t += 86_400_000;
   }
   return out;
-}
-
-function assignDatesAndPct() {
-  for (const model of MODELS) {
-    const n: Partial<Record<MatchPrediction['stage'], number>> = {};
-    for (const m of model.matches) {
-      if (m.stage === 'group') continue;
-      const i = n[m.stage] ?? 0;
-      m.date = STAGE_DATES[m.stage as Exclude<MatchPrediction['stage'], 'group'>][i];
-      m.slot = i;
-      m.pct = variedPct(m.id, m.confidence);
-      n[m.stage] = i + 1;
-    }
-  }
 }
 
 /** Source of truth — keep in sync with Analysis/*.md */
@@ -302,7 +294,7 @@ function mkGroup(md: ModelPrediction, f: GroupFixture, slot: number): MatchPredi
   const confidence = groupConfidence(rankW, rankL);
   return {
     id,
-    date: f.date,
+    kickoff: f.kickoff,
     slot,
     stage: 'group',
     group: f.group,
@@ -347,7 +339,7 @@ export const ALL_STAGES: { key: ScheduleStage; label: string; color: string }[] 
 export const ALL_DATES = tournamentDates(TOURNAMENT_START, TOURNAMENT_END);
 
 export function slotKey(m: MatchPrediction) {
-  if (m.stage === 'group') return `group|${m.date}|${m.teamA}|${m.teamB}`;
+  if (m.stage === 'group') return `group|${m.kickoff}|${m.teamA}|${m.teamB}`;
   return `${m.stage}|${m.slot}`;
 }
 

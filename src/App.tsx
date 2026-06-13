@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ACTUALS } from './data/actuals';
 import {
   ALL_DATES,
@@ -13,6 +13,16 @@ import {
   type ModelPrediction,
   type ScheduleStage,
 } from './data/predictions';
+import { espnIdFromMatchId, resolveTiming } from './lib/espnStatus';
+import {
+  fmtCountdown,
+  fmtKickoff,
+  localDateKey,
+  msUntilKickoff,
+  timingLabel,
+  type MatchTiming,
+} from './lib/matchTime';
+import { useEspnStates, useNow } from './lib/useScheduleClock';
 
 type Tab = 'matches' | 'groups' | 'outright';
 
@@ -21,13 +31,14 @@ interface Pick { m: MatchPrediction; md: ModelPrediction }
 interface SlotGroup {
   key: string;
   stage: MatchPrediction['stage'];
-  date: string;
+  kickoff: string;
   slot: number;
   groupLetter?: string;
+  espnId?: string;
   picks: Pick[];
 }
 
-function fmtDate(iso: string) {
+function fmtDateOption(iso: string) {
   return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
@@ -46,7 +57,34 @@ function MiniFixture({ m }: { m: MatchPrediction }) {
   );
 }
 
-function SlotCard({ group }: { group: SlotGroup }) {
+function TimingBadge({
+  timing,
+  kickoff,
+  now,
+}: {
+  timing: MatchTiming;
+  kickoff: string;
+  now: number;
+}) {
+  const countdown = timing === 'upcoming' ? fmtCountdown(msUntilKickoff(kickoff, now)) : '';
+  return (
+    <span className={`timing timing-${timing}`}>
+      {timing === 'live' && <i className="live-dot" />}
+      {timingLabel(timing)}
+      {countdown && ` · ${countdown}`}
+    </span>
+  );
+}
+
+function SlotCard({
+  group,
+  timing,
+  now,
+}: {
+  group: SlotGroup;
+  timing: MatchTiming;
+  now: number;
+}) {
   const st = stageInfo(group.stage);
   const winners = group.picks.map((p) => p.m.winner);
   const consensus = winners.length > 1 && winners.every((w) => w === winners[0]);
@@ -55,10 +93,11 @@ function SlotCard({ group }: { group: SlotGroup }) {
     : st.label;
 
   return (
-    <li className="fixture" style={{ '--stage': st.color } as React.CSSProperties}>
+    <li className={`fixture timing-${timing}`} style={{ '--stage': st.color } as React.CSSProperties}>
       <div className="fixture-head">
         <span className="stage-tag">{stageLabel}</span>
-        <span className="date">{fmtDate(group.date)}</span>
+        <span className="date">{fmtKickoff(group.kickoff)}</span>
+        <TimingBadge timing={timing} kickoff={group.kickoff} now={now} />
         {group.stage !== 'group' && <span className="slot">#{group.slot + 1}</span>}
         {consensus ? (
           <span className="consensus">{group.picks.length}/{group.picks.length} → {winners[0]}</span>
@@ -123,6 +162,16 @@ export default function App() {
   const [stage, setStage] = useState<'all' | ScheduleStage>('all');
   const [date, setDate] = useState('');
   const [q, setQ] = useState('');
+  const now = useNow();
+  const espnStates = useEspnStates();
+
+  const getTiming = useCallback(
+    (g: SlotGroup) => {
+      const espn = g.espnId ? espnStates.get(g.espnId) : undefined;
+      return resolveTiming(g.kickoff, espn, now);
+    },
+    [espnStates, now],
+  );
 
   const fixtures = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -132,7 +181,7 @@ export default function App() {
     for (const md of active) {
       for (const m of md.matches) {
         if (stage !== 'all' && stage !== m.stage) continue;
-        if (date && m.date !== date) continue;
+        if (date && localDateKey(m.kickoff) !== date) continue;
         if (query && !`${m.teamA} ${m.teamB}`.toLowerCase().includes(query)) continue;
 
         const key = model === 'all' ? slotKey(m) : `${slotKey(m)}|${m.teamA}|${m.teamB}`;
@@ -140,9 +189,10 @@ export default function App() {
           map.set(key, {
             key,
             stage: m.stage,
-            date: m.date,
+            kickoff: m.kickoff,
             slot: m.slot,
             groupLetter: m.group,
+            espnId: espnIdFromMatchId(m.id),
             picks: [],
           });
         }
@@ -155,12 +205,13 @@ export default function App() {
     }
 
     return [...map.values()].sort(
-      (a, b) => a.date.localeCompare(b.date) || a.slot - b.slot,
+      (a, b) => a.kickoff.localeCompare(b.kickoff) || a.slot - b.slot,
     );
   }, [model, stage, date, q]);
 
   const groupCount = fixtures.filter((f) => f.stage === 'group').length;
   const knockoutCount = fixtures.filter((f) => f.stage !== 'group').length;
+  const liveCount = fixtures.filter((f) => getTiming(f) === 'live').length;
 
   return (
     <div className="page">
@@ -191,7 +242,7 @@ export default function App() {
             </div>
             <select value={date} onChange={(e) => setDate(e.target.value)}>
               <option value="">All dates</option>
-              {ALL_DATES.map((d) => <option key={d} value={d}>{fmtDate(d)}</option>)}
+              {ALL_DATES.map((d) => <option key={d} value={d}>{fmtDateOption(d)}</option>)}
             </select>
             <input type="date" min={TOURNAMENT_START} max={TOURNAMENT_END} value={date} onChange={(e) => setDate(e.target.value)} />
             {date && <button type="button" className="link" onClick={() => setDate('')}>Clear</button>}
@@ -203,10 +254,14 @@ export default function App() {
         {tab === 'matches' && (
           <>
             <p className="meta">
-              {groupCount} group · {knockoutCount} knockout · all models per match · Jun 11 – Jul 19
+              {groupCount} group · {knockoutCount} knockout
+              {liveCount > 0 && ` · ${liveCount} live now`}
+              {' · '}times in your local timezone
             </p>
             <ul className="list">
-              {fixtures.map((g) => <SlotCard key={g.key} group={g} />)}
+              {fixtures.map((g) => (
+                <SlotCard key={g.key} group={g} timing={getTiming(g)} now={now} />
+              ))}
             </ul>
             {!fixtures.length && <p className="empty">No matches — adjust filters</p>}
           </>

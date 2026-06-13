@@ -106,6 +106,7 @@ main { padding: 16px 20px 32px; }
 
 .fixture-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
@@ -116,6 +117,37 @@ main { padding: 16px 20px 32px; }
 
 .stage-tag { font-weight: 700; text-transform: uppercase; color: var(--stage); }
 .date, .slot { color: #666; }
+
+.timing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.timing-live { background: #fee2e2; color: #dc2626; }
+.timing-upcoming { background: #f1f5f9; color: #64748b; }
+.timing-finished { background: #e2e8f0; color: #475569; }
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #dc2626;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.fixture.timing-live {
+  box-shadow: 0 0 0 1px #fecaca;
+}
 
 .consensus {
   margin-left: auto;
