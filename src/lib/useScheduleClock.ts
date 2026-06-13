@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { GROUP_FIXTURES } from '../data/groupSchedule';
-import { fetchEspnStates, type EspnState } from './espnStatus';
+import { fetchEspnResults, type EspnResult } from './espnResults';
 
 export function useNow(intervalMs = 30_000) {
   const [now, setNow] = useState(() => Date.now());
@@ -11,15 +10,19 @@ export function useNow(intervalMs = 30_000) {
   return now;
 }
 
-export function useEspnStates(refreshMs = 60_000) {
-  const [states, setStates] = useState<Map<string, EspnState>>(() => new Map());
+export function useEspnResults(refreshMs = 60_000) {
+  const [byId, setById] = useState<Map<string, EspnResult>>(() => new Map());
+  const [byTeams, setByTeams] = useState<Map<string, EspnResult>>(() => new Map());
+
   useEffect(() => {
-    const ids = GROUP_FIXTURES.map((f) => f.id);
     let cancelled = false;
 
     const load = () => {
-      fetchEspnStates(ids).then((map) => {
-        if (!cancelled) setStates(map);
+      fetchEspnResults().then(({ byId: idMap, byTeams: teamMap }) => {
+        if (!cancelled) {
+          setById(idMap);
+          setByTeams(teamMap);
+        }
       });
     };
 
@@ -31,5 +34,5 @@ export function useEspnStates(refreshMs = 60_000) {
     };
   }, [refreshMs]);
 
-  return states;
+  return { byId, byTeams };
 }

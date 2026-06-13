@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ACTUALS } from './data/actuals';
 import {
   ALL_DATES,
   ALL_STAGES,
@@ -13,18 +12,26 @@ import {
   type ModelPrediction,
   type ScheduleStage,
 } from './data/predictions';
-import { espnIdFromMatchId, resolveTiming } from './lib/espnStatus';
+import {
+  accuracyPct,
+  computeModelAccuracy,
+  espnIdFromMatchId,
+  lookupResult,
+  predictionCorrect,
+  resolveTiming,
+  type EspnResult,
+  type ModelAccuracy,
+} from './lib/espnResults';
 import {
   fmtCountdown,
   fmtKickoff,
   localDateKey,
   msUntilKickoff,
-  timingLabel,
   type MatchTiming,
 } from './lib/matchTime';
-import { useEspnStates, useNow } from './lib/useScheduleClock';
+import { useEspnResults, useNow } from './lib/useScheduleClock';
 
-type Tab = 'matches' | 'groups' | 'outright';
+type Tab = 'matches' | 'groups' | 'outright' | 'accuracy';
 
 interface Pick { m: MatchPrediction; md: ModelPrediction }
 
@@ -35,6 +42,8 @@ interface SlotGroup {
   slot: number;
   groupLetter?: string;
   espnId?: string;
+  teamA: string;
+  teamB: string;
   picks: Pick[];
 }
 
@@ -44,6 +53,20 @@ function fmtDateOption(iso: string) {
 
 function stageInfo(stage: MatchPrediction['stage']) {
   return ALL_STAGES.find((s) => s.key === stage)!;
+}
+
+function ActualScore({ actual }: { actual: EspnResult }) {
+  const aWin = actual.winner === actual.teamA;
+  const bWin = actual.winner === actual.teamB;
+  return (
+    <div className="actual-row">
+      <span className="actual-label">Result</span>
+      <span className={aWin ? 'w' : actual.winner ? 'l' : ''}>{actual.teamA}</span>
+      <span className="sc">{actual.score}</span>
+      <span className={bWin ? 'w' : actual.winner ? 'l' : ''}>{actual.teamB}</span>
+      {!actual.winner && actual.state === 'post' && <span className="draw-tag">Draw</span>}
+    </div>
+  );
 }
 
 function MiniFixture({ m }: { m: MatchPrediction }) {
@@ -57,33 +80,57 @@ function MiniFixture({ m }: { m: MatchPrediction }) {
   );
 }
 
-function TimingBadge({
+function StatusBadge({
   timing,
   kickoff,
   now,
+  actual,
 }: {
   timing: MatchTiming;
   kickoff: string;
   now: number;
+  actual?: EspnResult;
 }) {
-  const countdown = timing === 'upcoming' ? fmtCountdown(msUntilKickoff(kickoff, now)) : '';
-  return (
-    <span className={`timing timing-${timing}`}>
-      {timing === 'live' && <i className="live-dot" />}
-      {timingLabel(timing)}
-      {countdown && ` · ${countdown}`}
-    </span>
-  );
+  if (timing === 'finished' && actual) {
+    return <span className="timing timing-finished">FT · {actual.score}</span>;
+  }
+  if (timing === 'live' && actual) {
+    return (
+      <span className="timing timing-live">
+        <i className="live-dot" />
+        Live {actual.clock ?? ''} · {actual.score}
+      </span>
+    );
+  }
+  if (timing === 'live') {
+    return (
+      <span className="timing timing-live">
+        <i className="live-dot" />
+        Live
+      </span>
+    );
+  }
+  if (timing === 'upcoming') {
+    const countdown = fmtCountdown(msUntilKickoff(kickoff, now));
+    return (
+      <span className="timing timing-upcoming">
+        Upcoming{countdown ? ` · ${countdown}` : ''}
+      </span>
+    );
+  }
+  return <span className="timing timing-finished">FT</span>;
 }
 
 function SlotCard({
   group,
   timing,
   now,
+  actual,
 }: {
   group: SlotGroup;
   timing: MatchTiming;
   now: number;
+  actual?: EspnResult;
 }) {
   const st = stageInfo(group.stage);
   const winners = group.picks.map((p) => p.m.winner);
@@ -97,29 +144,63 @@ function SlotCard({
       <div className="fixture-head">
         <span className="stage-tag">{stageLabel}</span>
         <span className="date">{fmtKickoff(group.kickoff)}</span>
-        <TimingBadge timing={timing} kickoff={group.kickoff} now={now} />
+        <StatusBadge timing={timing} kickoff={group.kickoff} now={now} actual={actual} />
         {group.stage !== 'group' && <span className="slot">#{group.slot + 1}</span>}
-        {consensus ? (
+        {actual?.state === 'post' && consensus && actual.winner && (
           <span className="consensus">{group.picks.length}/{group.picks.length} → {winners[0]}</span>
-        ) : (
+        )}
+        {actual?.state === 'post' && !consensus && (
           <span className="split-vote">Split</span>
         )}
       </div>
+      {actual && (actual.state === 'post' || actual.state === 'in') && (
+        <ActualScore actual={actual} />
+      )}
       <div className="picks">
         {group.picks.map(({ m, md }) => {
-          const actual = ACTUALS.find((a) => a.matchId === m.id);
-          const ok = actual ? actual.winner === m.winner : null;
+          const ok = actual ? predictionCorrect(m.winner, actual) : null;
           return (
             <div key={m.id} className={`pick ${md.id}`}>
               <span className="pick-name">{md.name}</span>
               <MiniFixture m={m} />
               <span className={`pick-conf ${pctClass(m.pct)}`}>{m.pct}%</span>
-              {actual && <span className={ok ? 'ok' : 'bad'}>{ok ? '✓' : '✗'}</span>}
+              {ok === true && <span className="ok">✓</span>}
+              {ok === false && <span className="bad">✗</span>}
             </div>
           );
         })}
       </div>
     </li>
+  );
+}
+
+function AccuracyBoard({ scores }: { scores: ModelAccuracy[] }) {
+  const sorted = [...scores].sort((a, b) => {
+    if (b.correct !== a.correct) return b.correct - a.correct;
+    return b.total - a.total;
+  });
+  const leader = sorted[0];
+  const completed = scores.reduce((s, x) => s + x.total, 0);
+
+  return (
+    <div className="accuracy-panel">
+      <p className="meta">
+        {completed} completed matches scored · winner prediction accuracy
+        {leader && leader.total > 0 && (
+          <> · leading: <strong className={leader.id}>{leader.name}</strong> ({accuracyPct(leader.correct, leader.total)})</>
+        )}
+      </p>
+      <div className="accuracy-cards">
+        {sorted.map((s, i) => (
+          <article key={s.id} className={`accuracy-card ${s.id}${i === 0 && s.total > 0 ? ' leader' : ''}`}>
+            <strong>{s.name}</strong>
+            <p className="acc-score">{s.correct}/{s.total}</p>
+            <p className="acc-pct">{accuracyPct(s.correct, s.total)}</p>
+            {i === 0 && s.total > 0 && <span className="leader-tag">Most accurate</span>}
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -163,14 +244,21 @@ export default function App() {
   const [date, setDate] = useState('');
   const [q, setQ] = useState('');
   const now = useNow();
-  const espnStates = useEspnStates();
+  const { byId, byTeams } = useEspnResults();
+
+  const accuracy = useMemo(
+    () => computeModelAccuracy(MODELS, byId, byTeams),
+    [byId, byTeams],
+  );
+
+  const lookup = useCallback(
+    (g: SlotGroup) => lookupResult(g.espnId, g.teamA, g.teamB, byId, byTeams),
+    [byId, byTeams],
+  );
 
   const getTiming = useCallback(
-    (g: SlotGroup) => {
-      const espn = g.espnId ? espnStates.get(g.espnId) : undefined;
-      return resolveTiming(g.kickoff, espn, now);
-    },
-    [espnStates, now],
+    (g: SlotGroup) => resolveTiming(lookup(g), g.kickoff, now),
+    [lookup, now],
   );
 
   const fixtures = useMemo(() => {
@@ -193,6 +281,8 @@ export default function App() {
             slot: m.slot,
             groupLetter: m.group,
             espnId: espnIdFromMatchId(m.id),
+            teamA: m.teamA,
+            teamB: m.teamB,
             picks: [],
           });
         }
@@ -212,6 +302,7 @@ export default function App() {
   const groupCount = fixtures.filter((f) => f.stage === 'group').length;
   const knockoutCount = fixtures.filter((f) => f.stage !== 'group').length;
   const liveCount = fixtures.filter((f) => getTiming(f) === 'live').length;
+  const scoredCount = accuracy.reduce((s, a) => s + a.total, 0);
 
   return (
     <div className="page">
@@ -222,8 +313,10 @@ export default function App() {
 
       <div className="filters">
         <div className="pills">
-          {(['matches', 'groups', 'outright'] as Tab[]).map((t) => (
-            <button key={t} type="button" className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t === 'matches' ? 'Schedule' : t === 'groups' ? 'Groups' : 'Winners'}</button>
+          {(['matches', 'accuracy', 'groups', 'outright'] as Tab[]).map((t) => (
+            <button key={t} type="button" className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
+              {t === 'matches' ? 'Schedule' : t === 'accuracy' ? 'Accuracy' : t === 'groups' ? 'Groups' : 'Winners'}
+            </button>
           ))}
         </div>
         <div className="pills">
@@ -253,17 +346,50 @@ export default function App() {
       <main>
         {tab === 'matches' && (
           <>
+            {scoredCount > 0 && <AccuracyBoard scores={accuracy} />}
             <p className="meta">
               {groupCount} group · {knockoutCount} knockout
-              {liveCount > 0 && ` · ${liveCount} live now`}
-              {' · '}times in your local timezone
+              {liveCount > 0 && ` · ${liveCount} live`}
+              {scoredCount > 0 && ` · ${scoredCount} with results`}
             </p>
             <ul className="list">
-              {fixtures.map((g) => (
-                <SlotCard key={g.key} group={g} timing={getTiming(g)} now={now} />
-              ))}
+              {fixtures.map((g) => {
+                const actual = lookup(g);
+                return (
+                  <SlotCard
+                    key={g.key}
+                    group={g}
+                    timing={getTiming(g)}
+                    now={now}
+                    actual={actual}
+                  />
+                );
+              })}
             </ul>
             {!fixtures.length && <p className="empty">No matches — adjust filters</p>}
+          </>
+        )}
+
+        {tab === 'accuracy' && (
+          <>
+            <AccuracyBoard scores={accuracy} />
+            <p className="meta">✓ = predicted winner matched final result · ✗ = wrong · draws count as wrong for all models</p>
+            <ul className="list">
+              {fixtures
+                .filter((g) => lookup(g)?.state === 'post')
+                .map((g) => (
+                  <SlotCard
+                    key={g.key}
+                    group={g}
+                    timing="finished"
+                    now={now}
+                    actual={lookup(g)}
+                  />
+                ))}
+            </ul>
+            {!fixtures.some((g) => lookup(g)?.state === 'post') && (
+              <p className="empty">No completed matches yet — check back after kickoff</p>
+            )}
           </>
         )}
 
