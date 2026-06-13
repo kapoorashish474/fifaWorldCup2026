@@ -1,19 +1,16 @@
 export type Confidence = 'high' | 'moderate' | 'low';
 
-export const CONFIDENCE_PCT: Record<Confidence, number> = {
-  high: 85,
-  moderate: 60,
-  low: 40,
-};
-
 export interface MatchPrediction {
   id: string;
+  date: string;
+  slot: number;
   stage: 'r32' | 'r16' | 'qf' | 'sf' | 'bronze' | 'final';
   teamA: string;
   teamB: string;
   winner: string;
   score: string;
   confidence: Confidence;
+  pct: number;
 }
 
 export interface ModelPrediction {
@@ -58,7 +55,39 @@ function mk(
   score: string,
   confidence: Confidence,
 ): MatchPrediction {
-  return { id, stage, teamA: a, teamB: b, winner, score, confidence };
+  return { id, date: '', slot: 0, stage, teamA: a, teamB: b, winner, score, confidence, pct: 0 };
+}
+
+function variedPct(id: string, confidence: Confidence): number {
+  const hash = [...id].reduce((s, c) => s + c.charCodeAt(0), 0);
+  const tiers = { high: [74, 94], moderate: [46, 71], low: [28, 45] } as const;
+  const [lo, hi] = tiers[confidence];
+  return lo + (hash % (hi - lo + 1));
+}
+
+const STAGE_DATES: Record<MatchPrediction['stage'], string[]> = {
+  r32: ['2026-06-28', '2026-06-28', '2026-06-28', '2026-06-29', '2026-06-29', '2026-06-29', '2026-06-30', '2026-06-30', '2026-06-30', '2026-07-01', '2026-07-01', '2026-07-01', '2026-07-02', '2026-07-02', '2026-07-02', '2026-07-03'],
+  r16: ['2026-07-04', '2026-07-04', '2026-07-05', '2026-07-05', '2026-07-06', '2026-07-06', '2026-07-07', '2026-07-07'],
+  qf: ['2026-07-09', '2026-07-09', '2026-07-10', '2026-07-11'],
+  sf: ['2026-07-14', '2026-07-15'],
+  bronze: ['2026-07-18'],
+  final: ['2026-07-19'],
+};
+
+export const TOURNAMENT_START = '2026-06-28';
+export const TOURNAMENT_END = '2026-07-19';
+
+function assignDatesAndPct() {
+  for (const model of MODELS) {
+    const n: Partial<Record<MatchPrediction['stage'], number>> = {};
+    for (const m of model.matches) {
+      const i = n[m.stage] ?? 0;
+      m.date = STAGE_DATES[m.stage][i];
+      m.slot = i;
+      m.pct = variedPct(m.id, m.confidence);
+      n[m.stage] = i + 1;
+    }
+  }
 }
 
 /** Source of truth — keep in sync with Analysis/*.md */
@@ -209,28 +238,27 @@ export const MODELS: ModelPrediction[] = [
   },
 ];
 
-export const STAGES: { key: MatchPrediction['stage']; label: string }[] = [
-  { key: 'r32', label: 'Round of 32' },
-  { key: 'r16', label: 'Round of 16' },
-  { key: 'qf', label: 'Quarterfinals' },
-  { key: 'sf', label: 'Semifinals' },
-  { key: 'bronze', label: 'Bronze' },
-  { key: 'final', label: 'Final' },
+assignDatesAndPct();
+
+export const GROUP_LETTERS = GROUPS.map((g) => g.letter);
+
+export const STAGES: { key: MatchPrediction['stage']; label: string; color: string }[] = [
+  { key: 'r32', label: 'Round of 32', color: '#2563eb' },
+  { key: 'r16', label: 'Round of 16', color: '#7c3aed' },
+  { key: 'qf', label: 'Quarterfinals', color: '#ea580c' },
+  { key: 'sf', label: 'Semifinals', color: '#db2777' },
+  { key: 'bronze', label: 'Bronze', color: '#a16207' },
+  { key: 'final', label: 'Final', color: '#ca8a04' },
 ];
 
-export function confidencePct(c: Confidence) {
-  return CONFIDENCE_PCT[c];
+export const ALL_DATES = [...new Set(MODELS[0].matches.map((m) => m.date))].sort();
+
+export function slotKey(m: MatchPrediction) {
+  return `${m.stage}|${m.slot}`;
 }
 
-export function loser(m: MatchPrediction) {
-  return m.winner === m.teamA ? m.teamB : m.teamA;
-}
-
-export function groupStatus(model: ModelPrediction, groupLetter: string, team: string) {
-  const g = model.groups.find((x) => x.letter === groupLetter)!;
-  const idx = g.teams.indexOf(team);
-  if (idx < 0) return 'out';
-  if (idx < 2) return 'through';
-  if (idx === 2 && model.bestThird.includes(team)) return 'through';
-  return 'out';
+export function pctClass(pct: number) {
+  if (pct >= 75) return 'pct-high';
+  if (pct >= 50) return 'pct-mid';
+  return 'pct-low';
 }
