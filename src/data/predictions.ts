@@ -1,10 +1,13 @@
+import { GROUP_FIXTURES, type GroupFixture } from './groupSchedule';
+
 export type Confidence = 'high' | 'moderate' | 'low';
 
 export interface MatchPrediction {
   id: string;
   date: string;
   slot: number;
-  stage: 'r32' | 'r16' | 'qf' | 'sf' | 'bronze' | 'final';
+  stage: 'group' | 'r32' | 'r16' | 'qf' | 'sf' | 'bronze' | 'final';
+  group?: string;
   teamA: string;
   teamB: string;
   winner: string;
@@ -54,8 +57,9 @@ function mk(
   winner: string,
   score: string,
   confidence: Confidence,
+  group?: string,
 ): MatchPrediction {
-  return { id, date: '', slot: 0, stage, teamA: a, teamB: b, winner, score, confidence, pct: 0 };
+  return { id, date: '', slot: 0, stage, group, teamA: a, teamB: b, winner, score, confidence, pct: 0 };
 }
 
 function variedPct(id: string, confidence: Confidence): number {
@@ -65,7 +69,7 @@ function variedPct(id: string, confidence: Confidence): number {
   return lo + (hash % (hi - lo + 1));
 }
 
-const STAGE_DATES: Record<MatchPrediction['stage'], string[]> = {
+const STAGE_DATES: Record<Exclude<MatchPrediction['stage'], 'group'>, string[]> = {
   r32: ['2026-06-28', '2026-06-28', '2026-06-28', '2026-06-29', '2026-06-29', '2026-06-29', '2026-06-30', '2026-06-30', '2026-06-30', '2026-07-01', '2026-07-01', '2026-07-01', '2026-07-02', '2026-07-02', '2026-07-02', '2026-07-03'],
   r16: ['2026-07-04', '2026-07-04', '2026-07-05', '2026-07-05', '2026-07-06', '2026-07-06', '2026-07-07', '2026-07-07'],
   qf: ['2026-07-09', '2026-07-09', '2026-07-10', '2026-07-11'],
@@ -74,15 +78,31 @@ const STAGE_DATES: Record<MatchPrediction['stage'], string[]> = {
   final: ['2026-07-19'],
 };
 
-export const TOURNAMENT_START = '2026-06-28';
+export const TOURNAMENT_START = '2026-06-11';
 export const TOURNAMENT_END = '2026-07-19';
+export const KNOCKOUT_START = '2026-06-28';
+
+function tournamentDates(start: string, end: string): string[] {
+  const out: string[] = [];
+  let t = Date.parse(`${start}T12:00:00Z`);
+  const endT = Date.parse(`${end}T12:00:00Z`);
+  while (t <= endT) {
+    const d = new Date(t);
+    out.push(
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`,
+    );
+    t += 86_400_000;
+  }
+  return out;
+}
 
 function assignDatesAndPct() {
   for (const model of MODELS) {
     const n: Partial<Record<MatchPrediction['stage'], number>> = {};
     for (const m of model.matches) {
+      if (m.stage === 'group') continue;
       const i = n[m.stage] ?? 0;
-      m.date = STAGE_DATES[m.stage][i];
+      m.date = STAGE_DATES[m.stage as Exclude<MatchPrediction['stage'], 'group'>][i];
       m.slot = i;
       m.pct = variedPct(m.id, m.confidence);
       n[m.stage] = i + 1;
@@ -240,7 +260,73 @@ export const MODELS: ModelPrediction[] = [
 
 assignDatesAndPct();
 
+function teamRank(md: ModelPrediction, team: string, letter: string): number {
+  const g = md.groups.find((x) => x.letter === letter)!;
+  const i = g.teams.indexOf(team as (typeof g.teams)[number]);
+  return i >= 0 ? i + 1 : 99;
+}
+
+function groupMatchScore(rankW: number, rankL: number, seed: string, winnerIsA: boolean): string {
+  const gap = rankL - rankW;
+  const h = [...seed].reduce((s, c) => s + c.charCodeAt(0), 0);
+  let wG: number;
+  let lG: number;
+  if (gap >= 3) {
+    wG = h % 2 ? 3 : 2;
+    lG = 0;
+  } else if (gap === 2) {
+    wG = 2;
+    lG = h % 2 ? 0 : 1;
+  } else {
+    wG = h % 2 ? 2 : 1;
+    lG = wG === 2 ? 1 : 0;
+  }
+  return winnerIsA ? `${wG}-${lG}` : `${lG}-${wG}`;
+}
+
+function groupConfidence(rankW: number, rankL: number): Confidence {
+  const gap = rankL - rankW;
+  if (gap >= 2) return 'high';
+  if (gap === 1 && rankW <= 2) return 'moderate';
+  return 'low';
+}
+
+function mkGroup(md: ModelPrediction, f: GroupFixture, slot: number): MatchPrediction {
+  const rankA = teamRank(md, f.teamA, f.group);
+  const rankB = teamRank(md, f.teamB, f.group);
+  const aWins = rankA < rankB;
+  const winner = aWins ? f.teamA : f.teamB;
+  const rankW = Math.min(rankA, rankB);
+  const rankL = Math.max(rankA, rankB);
+  const id = `${md.id}-grp-${f.id}`;
+  const confidence = groupConfidence(rankW, rankL);
+  return {
+    id,
+    date: f.date,
+    slot,
+    stage: 'group',
+    group: f.group,
+    teamA: f.teamA,
+    teamB: f.teamB,
+    winner,
+    score: groupMatchScore(rankW, rankL, id, aWins),
+    confidence,
+    pct: variedPct(id, confidence),
+  };
+}
+
+function appendGroupPredictions() {
+  for (const md of MODELS) {
+    const groupMatches = GROUP_FIXTURES.map((f, i) => mkGroup(md, f, i));
+    md.matches = [...groupMatches, ...md.matches];
+  }
+}
+
+appendGroupPredictions();
+
 export const GROUP_LETTERS = GROUPS.map((g) => g.letter);
+
+export const GROUP_STAGE = { key: 'group' as const, label: 'Group stage', color: '#059669' };
 
 export const STAGES: { key: MatchPrediction['stage']; label: string; color: string }[] = [
   { key: 'r32', label: 'Round of 32', color: '#2563eb' },
@@ -251,9 +337,17 @@ export const STAGES: { key: MatchPrediction['stage']; label: string; color: stri
   { key: 'final', label: 'Final', color: '#ca8a04' },
 ];
 
-export const ALL_DATES = [...new Set(MODELS[0].matches.map((m) => m.date))].sort();
+export type ScheduleStage = typeof GROUP_STAGE.key | MatchPrediction['stage'];
+
+export const ALL_STAGES: { key: ScheduleStage; label: string; color: string }[] = [
+  GROUP_STAGE,
+  ...STAGES,
+];
+
+export const ALL_DATES = tournamentDates(TOURNAMENT_START, TOURNAMENT_END);
 
 export function slotKey(m: MatchPrediction) {
+  if (m.stage === 'group') return `group|${m.date}|${m.teamA}|${m.teamB}`;
   return `${m.stage}|${m.slot}`;
 }
 

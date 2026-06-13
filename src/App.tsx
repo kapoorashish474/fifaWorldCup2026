@@ -2,15 +2,16 @@ import { useMemo, useState } from 'react';
 import { ACTUALS } from './data/actuals';
 import {
   ALL_DATES,
+  ALL_STAGES,
   GROUP_LETTERS,
   MODELS,
-  STAGES,
   TOURNAMENT_END,
   TOURNAMENT_START,
   pctClass,
   slotKey,
   type MatchPrediction,
   type ModelPrediction,
+  type ScheduleStage,
 } from './data/predictions';
 
 type Tab = 'matches' | 'groups' | 'outright';
@@ -22,6 +23,7 @@ interface SlotGroup {
   stage: MatchPrediction['stage'];
   date: string;
   slot: number;
+  groupLetter?: string;
   picks: Pick[];
 }
 
@@ -30,7 +32,7 @@ function fmtDate(iso: string) {
 }
 
 function stageInfo(stage: MatchPrediction['stage']) {
-  return STAGES.find((s) => s.key === stage)!;
+  return ALL_STAGES.find((s) => s.key === stage)!;
 }
 
 function MiniFixture({ m }: { m: MatchPrediction }) {
@@ -48,13 +50,16 @@ function SlotCard({ group }: { group: SlotGroup }) {
   const st = stageInfo(group.stage);
   const winners = group.picks.map((p) => p.m.winner);
   const consensus = winners.length > 1 && winners.every((w) => w === winners[0]);
+  const stageLabel = group.stage === 'group' && group.groupLetter
+    ? `Group ${group.groupLetter}`
+    : st.label;
 
   return (
     <li className="fixture" style={{ '--stage': st.color } as React.CSSProperties}>
       <div className="fixture-head">
-        <span className="stage-tag">{st.label}</span>
+        <span className="stage-tag">{stageLabel}</span>
         <span className="date">{fmtDate(group.date)}</span>
-        <span className="slot">#{group.slot + 1}</span>
+        {group.stage !== 'group' && <span className="slot">#{group.slot + 1}</span>}
         {consensus ? (
           <span className="consensus">{group.picks.length}/{group.picks.length} → {winners[0]}</span>
         ) : (
@@ -115,7 +120,7 @@ function GroupCard({ letter }: { letter: string }) {
 export default function App() {
   const [tab, setTab] = useState<Tab>('matches');
   const [model, setModel] = useState('all');
-  const [stage, setStage] = useState('all');
+  const [stage, setStage] = useState<'all' | ScheduleStage>('all');
   const [date, setDate] = useState('');
   const [q, setQ] = useState('');
 
@@ -126,13 +131,20 @@ export default function App() {
 
     for (const md of active) {
       for (const m of md.matches) {
-        if (stage !== 'all' && m.stage !== stage) continue;
+        if (stage !== 'all' && stage !== m.stage) continue;
         if (date && m.date !== date) continue;
         if (query && !`${m.teamA} ${m.teamB}`.toLowerCase().includes(query)) continue;
 
         const key = model === 'all' ? slotKey(m) : `${slotKey(m)}|${m.teamA}|${m.teamB}`;
         if (!map.has(key)) {
-          map.set(key, { key, stage: m.stage, date: m.date, slot: m.slot, picks: [] });
+          map.set(key, {
+            key,
+            stage: m.stage,
+            date: m.date,
+            slot: m.slot,
+            groupLetter: m.group,
+            picks: [],
+          });
         }
         map.get(key)!.picks.push({ m, md });
       }
@@ -147,6 +159,9 @@ export default function App() {
     );
   }, [model, stage, date, q]);
 
+  const groupCount = fixtures.filter((f) => f.stage === 'group').length;
+  const knockoutCount = fixtures.filter((f) => f.stage !== 'group').length;
+
   return (
     <div className="page">
       <header>
@@ -157,7 +172,7 @@ export default function App() {
       <div className="filters">
         <div className="pills">
           {(['matches', 'groups', 'outright'] as Tab[]).map((t) => (
-            <button key={t} type="button" className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t === 'matches' ? 'Knockout' : t === 'groups' ? 'Groups' : 'Winners'}</button>
+            <button key={t} type="button" className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t === 'matches' ? 'Schedule' : t === 'groups' ? 'Groups' : 'Winners'}</button>
           ))}
         </div>
         <div className="pills">
@@ -170,7 +185,7 @@ export default function App() {
           <>
             <div className="pills scroll">
               <button type="button" className={stage === 'all' ? 'on' : ''} onClick={() => setStage('all')}>All stages</button>
-              {STAGES.map((s) => (
+              {ALL_STAGES.map((s) => (
                 <button key={s.key} type="button" className={stage === s.key ? 'on' : ''} onClick={() => setStage(s.key)}>{s.label}</button>
               ))}
             </div>
@@ -187,7 +202,9 @@ export default function App() {
       <main>
         {tab === 'matches' && (
           <>
-            <p className="meta">{fixtures.length} bracket slots · all models per slot · confidence varies by match</p>
+            <p className="meta">
+              {groupCount} group · {knockoutCount} knockout · all models per match · Jun 11 – Jul 19
+            </p>
             <ul className="list">
               {fixtures.map((g) => <SlotCard key={g.key} group={g} />)}
             </ul>
