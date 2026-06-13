@@ -1,5 +1,6 @@
 import { GROUP_FIXTURES, type GroupFixture } from './groupSchedule';
 import { KNOCKOUT_KICKOFFS } from './knockoutKickoffs';
+import { KNOCKOUT_VENUES } from './knockoutVenues';
 
 export type Confidence = 'high' | 'moderate' | 'low';
 
@@ -9,6 +10,7 @@ export interface MatchPrediction {
   slot: number;
   stage: 'group' | 'r32' | 'r16' | 'qf' | 'sf' | 'bronze' | 'final';
   group?: string;
+  venue?: string;
   teamA: string;
   teamB: string;
   winner: string;
@@ -77,6 +79,7 @@ function assignDatesAndPct() {
       if (m.stage === 'group') continue;
       const i = n[m.stage] ?? 0;
       m.kickoff = KNOCKOUT_KICKOFFS[m.stage as keyof typeof KNOCKOUT_KICKOFFS][i];
+      m.venue = KNOCKOUT_VENUES[m.kickoff];
       m.slot = i;
       m.pct = variedPct(m.id, m.confidence);
       n[m.stage] = i + 1;
@@ -298,6 +301,7 @@ function mkGroup(md: ModelPrediction, f: GroupFixture, slot: number): MatchPredi
     slot,
     stage: 'group',
     group: f.group,
+    venue: f.venue,
     teamA: f.teamA,
     teamB: f.teamB,
     winner,
@@ -317,6 +321,10 @@ function appendGroupPredictions() {
 appendGroupPredictions();
 
 export const GROUP_LETTERS = GROUPS.map((g) => g.letter);
+
+export const ALL_TEAMS = [...new Set(GROUPS.flatMap((g) => g.teams))].sort((a, b) =>
+  a.localeCompare(b),
+);
 
 export const GROUP_STAGE = { key: 'group' as const, label: 'Group stage', color: '#059669' };
 

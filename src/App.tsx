@@ -2,10 +2,9 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ALL_DATES,
   ALL_STAGES,
+  ALL_TEAMS,
   GROUP_LETTERS,
   MODELS,
-  TOURNAMENT_END,
-  TOURNAMENT_START,
   pctClass,
   slotKey,
   type MatchPrediction,
@@ -42,6 +41,7 @@ interface SlotGroup {
   slot: number;
   groupLetter?: string;
   espnId?: string;
+  venue?: string;
   teamA: string;
   teamB: string;
   picks: Pick[];
@@ -92,7 +92,7 @@ function StatusBadge({
   actual?: EspnResult;
 }) {
   if (timing === 'finished' && actual) {
-    return <span className="timing timing-finished">FT · {actual.score}</span>;
+    return <span className="timing timing-finished">{actual.score}</span>;
   }
   if (timing === 'live' && actual) {
     return (
@@ -118,7 +118,7 @@ function StatusBadge({
       </span>
     );
   }
-  return <span className="timing timing-finished">FT</span>;
+  return <span className="timing timing-finished">Finished</span>;
 }
 
 function SlotCard({
@@ -142,16 +142,34 @@ function SlotCard({
   return (
     <li className={`fixture timing-${timing}`} style={{ '--stage': st.color } as React.CSSProperties}>
       <div className="fixture-head">
-        <span className="stage-tag">{stageLabel}</span>
-        <span className="date">{fmtKickoff(group.kickoff)}</span>
-        <StatusBadge timing={timing} kickoff={group.kickoff} now={now} actual={actual} />
-        {group.stage !== 'group' && <span className="slot">#{group.slot + 1}</span>}
-        {actual?.state === 'post' && consensus && actual.winner && (
-          <span className="consensus">{group.picks.length}/{group.picks.length} → {winners[0]}</span>
-        )}
-        {actual?.state === 'post' && !consensus && (
-          <span className="split-vote">Split</span>
-        )}
+        <div className="fixture-head-line1">
+          <span className="stage-tag">{stageLabel}</span>
+          <span className="fixture-matchup">
+            <span className={actual?.winner === group.teamA ? 'w' : actual?.winner ? 'l' : ''}>{group.teamA}</span>
+            <span className="vs">vs</span>
+            <span className={actual?.winner === group.teamB ? 'w' : actual?.winner ? 'l' : ''}>{group.teamB}</span>
+          </span>
+          <div className="fixture-head-badges">
+            <StatusBadge timing={timing} kickoff={group.kickoff} now={now} actual={actual} />
+            {actual?.state === 'post' && consensus && actual.winner && (
+              <span className="consensus">{group.picks.length}/{group.picks.length} → {winners[0]}</span>
+            )}
+            {actual?.state === 'post' && !consensus && (
+              <span className="split-vote">Split</span>
+            )}
+          </div>
+        </div>
+        <div className="fixture-head-line2">
+          <span className="date">{fmtKickoff(group.kickoff)}</span>
+          {group.venue && <span className="venue-sep">·</span>}
+          {group.venue && <span className="venue">{group.venue}</span>}
+          {group.stage !== 'group' && (
+            <>
+              <span className="venue-sep">·</span>
+              <span className="slot">Match #{group.slot + 1}</span>
+            </>
+          )}
+        </div>
       </div>
       {actual && (actual.state === 'post' || actual.state === 'in') && (
         <ActualScore actual={actual} />
@@ -242,7 +260,7 @@ export default function App() {
   const [model, setModel] = useState('all');
   const [stage, setStage] = useState<'all' | ScheduleStage>('all');
   const [date, setDate] = useState('');
-  const [q, setQ] = useState('');
+  const [team, setTeam] = useState('');
   const now = useNow();
   const { byId, byTeams, loading, error, lastFetchedAt, fetchMs, refresh, hasData } = useEspnResults();
 
@@ -262,7 +280,6 @@ export default function App() {
   );
 
   const fixtures = useMemo(() => {
-    const query = q.trim().toLowerCase();
     const active = MODELS.filter((md) => model === 'all' || md.id === model);
     const map = new Map<string, SlotGroup>();
 
@@ -270,7 +287,7 @@ export default function App() {
       for (const m of md.matches) {
         if (stage !== 'all' && stage !== m.stage) continue;
         if (date && localDateKey(m.kickoff) !== date) continue;
-        if (query && !`${m.teamA} ${m.teamB}`.toLowerCase().includes(query)) continue;
+        if (team && m.teamA !== team && m.teamB !== team) continue;
 
         const key = model === 'all' ? slotKey(m) : `${slotKey(m)}|${m.teamA}|${m.teamB}`;
         if (!map.has(key)) {
@@ -281,6 +298,7 @@ export default function App() {
             slot: m.slot,
             groupLetter: m.group,
             espnId: espnIdFromMatchId(m.id),
+            venue: m.venue,
             teamA: m.teamA,
             teamB: m.teamB,
             picks: [],
@@ -297,7 +315,7 @@ export default function App() {
     return [...map.values()].sort(
       (a, b) => a.kickoff.localeCompare(b.kickoff) || a.slot - b.slot,
     );
-  }, [model, stage, date, q]);
+  }, [model, stage, date, team]);
 
   const groupCount = fixtures.filter((f) => f.stage === 'group').length;
   const knockoutCount = fixtures.filter((f) => f.stage !== 'group').length;
@@ -306,74 +324,92 @@ export default function App() {
 
   return (
     <div className="page">
-      <header>
-        <h1><a href="/Schedule" className="site-title" onClick={(e) => { e.preventDefault(); setTab('schedule'); }}>FIFA World Cup 2026</a></h1>
-        <div className="header-actions">
-          <button type="button" className="fetch-btn" onClick={refresh} disabled={loading}>
-            {loading ? 'Fetching…' : 'Fetch results'}
-          </button>
-          <input className="search" type="search" placeholder="Search team…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <header className="app-header">
+        <div className="header-top">
+          <h1>
+            <a href="/Schedule" className="site-title" onClick={(e) => { e.preventDefault(); setTab('schedule'); }}>
+              FIFA World Cup 2026
+            </a>
+          </h1>
+          <div className="header-top-right">
+            {lastFetchedAt && !error && (
+              <span className="fetch-meta-inline">
+                Updated {new Date(lastFetchedAt).toLocaleTimeString()}
+                {fetchMs > 0 && ` · ${fetchMs}ms`}
+              </span>
+            )}
+            <button type="button" className="fetch-btn" onClick={refresh} disabled={loading}>
+              {loading ? 'Fetching…' : 'Fetch results'}
+            </button>
+          </div>
         </div>
-      </header>
 
-      {error && <p className="fetch-err">{error}</p>}
-      {lastFetchedAt && !error && (
-        <p className="fetch-meta">
-          Last updated {new Date(lastFetchedAt).toLocaleTimeString()}
-          {fetchMs > 0 && ` · ${fetchMs}ms`}
-          {!hasData && !loading && ' · click Fetch results'}
-        </p>
-      )}
-
-      <nav className="nav-bar">
-        {NAV_TABS.map((t) => (
-          <a
-            key={t}
-            href={TAB_PATHS[t]}
-            className={tab === t ? 'on' : ''}
-            onClick={(e) => {
-              e.preventDefault();
-              setTab(t);
-            }}
-          >
-            {TAB_LABELS[t]}
-          </a>
-        ))}
-      </nav>
-
-      <div className="filters">
-        <label className="filter-select">
-          <span>Model</span>
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="all">All</option>
-            {MODELS.map((md) => (
-              <option key={md.id} value={md.id}>{md.name}</option>
-            ))}
-          </select>
-        </label>
-        {tab === 'schedule' && (
-          <>
-            <label className="filter-select">
-              <span>Stage</span>
-              <select value={stage} onChange={(e) => setStage(e.target.value as 'all' | ScheduleStage)}>
-                <option value="all">All stages</option>
-                {ALL_STAGES.map((s) => (
-                  <option key={s.key} value={s.key}>{s.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="filter-select">
-              <span>Date</span>
-              <select value={date} onChange={(e) => setDate(e.target.value)}>
-                <option value="">All dates</option>
-                {ALL_DATES.map((d) => <option key={d} value={d}>{fmtDateOption(d)}</option>)}
-              </select>
-            </label>
-            <input type="date" min={TOURNAMENT_START} max={TOURNAMENT_END} value={date} onChange={(e) => setDate(e.target.value)} aria-label="Pick date" />
-            {date && <button type="button" className="link" onClick={() => setDate('')}>Clear</button>}
-          </>
+        {error && <p className="fetch-err">{error}</p>}
+        {!hasData && !loading && !error && (
+          <p className="fetch-hint">Click Fetch results to load live scores from ESPN</p>
         )}
-      </div>
+
+        <nav className="nav-tabs" aria-label="Sections">
+          {NAV_TABS.map((t) => (
+            <a
+              key={t}
+              href={TAB_PATHS[t]}
+              className={tab === t ? 'on' : ''}
+              onClick={(e) => {
+                e.preventDefault();
+                setTab(t);
+              }}
+            >
+              {TAB_LABELS[t]}
+            </a>
+          ))}
+        </nav>
+
+        {(tab === 'schedule' || tab === 'accuracy') && (
+          <div className="filter-bar">
+            <select id="model-filter" className="filter-select" value={model} onChange={(e) => setModel(e.target.value)} aria-label="Model">
+              <option value="all">All models</option>
+              {MODELS.map((md) => (
+                <option key={md.id} value={md.id}>{md.name}</option>
+              ))}
+            </select>
+            {tab === 'schedule' && (
+              <>
+                <select id="stage-filter" className="filter-select" value={stage} onChange={(e) => setStage(e.target.value as 'all' | ScheduleStage)} aria-label="Stage">
+                  <option value="all">All stages</option>
+                  {ALL_STAGES.map((s) => (
+                    <option key={s.key} value={s.key}>{s.label}</option>
+                  ))}
+                </select>
+                <select id="date-filter" className="filter-select" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date">
+                  <option value="">All dates</option>
+                  {ALL_DATES.map((d) => <option key={d} value={d}>{fmtDateOption(d)}</option>)}
+                </select>
+              </>
+            )}
+            <select id="team-filter" className="filter-select filter-select-team" value={team} onChange={(e) => setTeam(e.target.value)} aria-label="Team">
+              <option value="">All teams</option>
+              {ALL_TEAMS.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            {(date || team || stage !== 'all' || model !== 'all') && (
+              <button
+                type="button"
+                className="filter-clear"
+                onClick={() => {
+                  setModel('all');
+                  setStage('all');
+                  setDate('');
+                  setTeam('');
+                }}
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        )}
+      </header>
 
       <main>
         {tab === 'schedule' && (

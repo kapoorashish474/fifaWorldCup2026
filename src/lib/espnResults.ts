@@ -28,6 +28,7 @@ export interface EspnResult {
   score: string;
   winner?: string;
   clock?: string;
+  venue?: string;
 }
 
 export function normalizeTeam(name: string): string {
@@ -43,6 +44,7 @@ function parseEvent(event: {
   id: string;
   competitions?: {
     status?: { type?: { state?: string; completed?: boolean }; displayClock?: string };
+    venue?: { fullName?: string; address?: { city?: string; country?: string } };
     competitors?: { homeAway: string; winner?: boolean; score: string; team: { displayName: string } }[];
   }[];
 }): EspnResult | null {
@@ -59,6 +61,14 @@ function parseEvent(event: {
   const state = comp.status?.type?.state;
   const espnState: EspnState = state === 'in' ? 'in' : state === 'post' || completed ? 'post' : 'pre';
   const winner = completed ? (home.winner ? teamA : away.winner ? teamB : undefined) : undefined;
+  const v = comp.venue;
+  const city = v?.address?.city;
+  const country = v?.address?.country;
+  const venue = v?.fullName && city
+    ? `${v.fullName} · ${city}${country ? `, ${country}` : ''}`
+    : city
+      ? `${city}${country ? `, ${country}` : ''}`
+      : v?.fullName;
 
   return {
     id: event.id,
@@ -68,6 +78,7 @@ function parseEvent(event: {
     score: `${scoreA}–${scoreB}`,
     winner,
     clock: comp.status?.displayClock,
+    venue,
   };
 }
 
