@@ -29,9 +29,9 @@ import {
   msUntilKickoff,
   type MatchTiming,
 } from './lib/matchTime';
+import { NAV_TABS, TAB_LABELS, TAB_PATHS } from './lib/routes';
 import { useEspnResults, useNow } from './lib/useScheduleClock';
-
-type Tab = 'matches' | 'groups' | 'outright' | 'accuracy';
+import { usePathTab } from './lib/usePathTab';
 
 interface Pick { m: MatchPrediction; md: ModelPrediction }
 
@@ -238,7 +238,7 @@ function GroupCard({ letter }: { letter: string }) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('matches');
+  const [tab, setTab] = usePathTab();
   const [model, setModel] = useState('all');
   const [stage, setStage] = useState<'all' | ScheduleStage>('all');
   const [date, setDate] = useState('');
@@ -307,7 +307,7 @@ export default function App() {
   return (
     <div className="page">
       <header>
-        <h1>FIFA World Cup 2026</h1>
+        <h1><a href="/Schedule" className="site-title" onClick={(e) => { e.preventDefault(); setTab('schedule'); }}>FIFA World Cup 2026</a></h1>
         <div className="header-actions">
           <button type="button" className="fetch-btn" onClick={refresh} disabled={loading}>
             {loading ? 'Fetching…' : 'Fetch results'}
@@ -325,40 +325,58 @@ export default function App() {
         </p>
       )}
 
+      <nav className="nav-bar">
+        {NAV_TABS.map((t) => (
+          <a
+            key={t}
+            href={TAB_PATHS[t]}
+            className={tab === t ? 'on' : ''}
+            onClick={(e) => {
+              e.preventDefault();
+              setTab(t);
+            }}
+          >
+            {TAB_LABELS[t]}
+          </a>
+        ))}
+      </nav>
+
       <div className="filters">
-        <div className="pills">
-          {(['matches', 'accuracy', 'groups', 'outright'] as Tab[]).map((t) => (
-            <button key={t} type="button" className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-              {t === 'matches' ? 'Schedule' : t === 'accuracy' ? 'Accuracy' : t === 'groups' ? 'Groups' : 'Winners'}
-            </button>
-          ))}
-        </div>
-        <div className="pills">
-          <button type="button" className={model === 'all' ? 'on' : ''} onClick={() => setModel('all')}>All</button>
-          {MODELS.map((md) => (
-            <button key={md.id} type="button" className={`${model === md.id ? 'on' : ''} ${md.id}`} onClick={() => setModel(md.id)}>{md.name}</button>
-          ))}
-        </div>
-        {tab === 'matches' && (
+        <label className="filter-select">
+          <span>Model</span>
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="all">All</option>
+            {MODELS.map((md) => (
+              <option key={md.id} value={md.id}>{md.name}</option>
+            ))}
+          </select>
+        </label>
+        {tab === 'schedule' && (
           <>
-            <div className="pills scroll">
-              <button type="button" className={stage === 'all' ? 'on' : ''} onClick={() => setStage('all')}>All stages</button>
-              {ALL_STAGES.map((s) => (
-                <button key={s.key} type="button" className={stage === s.key ? 'on' : ''} onClick={() => setStage(s.key)}>{s.label}</button>
-              ))}
-            </div>
-            <select value={date} onChange={(e) => setDate(e.target.value)}>
-              <option value="">All dates</option>
-              {ALL_DATES.map((d) => <option key={d} value={d}>{fmtDateOption(d)}</option>)}
-            </select>
-            <input type="date" min={TOURNAMENT_START} max={TOURNAMENT_END} value={date} onChange={(e) => setDate(e.target.value)} />
+            <label className="filter-select">
+              <span>Stage</span>
+              <select value={stage} onChange={(e) => setStage(e.target.value as 'all' | ScheduleStage)}>
+                <option value="all">All stages</option>
+                {ALL_STAGES.map((s) => (
+                  <option key={s.key} value={s.key}>{s.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-select">
+              <span>Date</span>
+              <select value={date} onChange={(e) => setDate(e.target.value)}>
+                <option value="">All dates</option>
+                {ALL_DATES.map((d) => <option key={d} value={d}>{fmtDateOption(d)}</option>)}
+              </select>
+            </label>
+            <input type="date" min={TOURNAMENT_START} max={TOURNAMENT_END} value={date} onChange={(e) => setDate(e.target.value)} aria-label="Pick date" />
             {date && <button type="button" className="link" onClick={() => setDate('')}>Clear</button>}
           </>
         )}
       </div>
 
       <main>
-        {tab === 'matches' && (
+        {tab === 'schedule' && (
           <>
             {scoredCount > 0 && <AccuracyBoard scores={accuracy} />}
             <p className="meta">
@@ -427,7 +445,7 @@ export default function App() {
           </>
         )}
 
-        {tab === 'outright' && (
+        {tab === 'winners' && (
           <div className="outright">
             {MODELS.map((md) => (
               <article key={md.id} className={`card ${md.id}`}>
