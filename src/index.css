@@ -505,13 +505,22 @@ main { padding: 16px 20px 32px; }
 .group-table { font-size: 12px; }
 
 .group-row {
-  display: grid;
-  grid-template-columns: 28px 1fr repeat(3, 72px);
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
   padding: 7px 12px;
   border-bottom: 1px solid #f5f5f5;
 }
+
+.group-row > span {
+  flex-shrink: 0;
+}
+
+.group-row .pos-col { width: 28px; }
+.group-row .team-col { flex: 1; min-width: 90px; }
+.group-row .stat-col { width: 28px; }
+.group-row .col-h, .group-row .status { width: 64px; }
 
 .group-row.head {
   background: #fafafa;
@@ -527,6 +536,30 @@ main { padding: 16px 20px 32px; }
 
 .pos { color: #888; font-weight: 600; }
 .team-name { font-weight: 500; }
+
+.strikeout { text-decoration: line-through; color: #b91c1c; opacity: 0.7; }
+
+.group-row.eliminated { background: #fef2f2; }
+.group-row.eliminated .pos { color: #b91c1c; }
+
+.stat-col {
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
+}
+
+.pts-col { font-weight: 700; color: #1a1a1a; }
+
+.pos-col { min-width: 28px; }
+.team-col { min-width: 100px; flex: 1; }
+
+.group-legend {
+  padding: 6px 12px 8px;
+  font-size: 10px;
+  color: #8e8e93;
+  border-top: 1px solid #f0f0f0;
+}
 
 .status {
   text-align: center;
@@ -603,5 +636,8 @@ main { padding: 16px 20px 32px; }
     margin-left: 0;
   }
   .list, .group-grid { grid-template-columns: 1fr; }
-  .group-row { grid-template-columns: 24px 1fr repeat(3, 58px); font-size: 11px; }
+  .group-row { font-size: 11px; }
+  .group-row .stat-col { width: 22px; font-size: 10px; }
+  .group-row .col-h, .group-row .status { width: 52px; font-size: 9px; }
+  .group-card { overflow-x: auto; }
 }

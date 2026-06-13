@@ -11,6 +11,7 @@ import {
   type ModelPrediction,
   type ScheduleStage,
 } from './data/predictions';
+import { GROUP_FIXTURES } from './data/groupSchedule';
 import {
   accuracyPct,
   computeModelAccuracy,
@@ -18,6 +19,7 @@ import {
   lookupResult,
   predictionCorrect,
   resolveTiming,
+  teamsKey,
   type EspnResult,
   type ModelAccuracy,
 } from './lib/espnResults';
@@ -222,35 +224,174 @@ function AccuracyBoard({ scores }: { scores: ModelAccuracy[] }) {
   );
 }
 
-function GroupCard({ letter }: { letter: string }) {
+interface TeamStanding {
+  team: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  gf: number;
+  ga: number;
+  gd: number;
+  pts: number;
+}
+
+function computeGroupStandings(
+  letter: string,
+  teams: readonly string[],
+  byTeams: Map<string, EspnResult>,
+): TeamStanding[] {
+  const fixtures = GROUP_FIXTURES.filter((f) => f.group === letter);
+  const standings = new Map<string, TeamStanding>();
+
+  for (const team of teams) {
+    standings.set(team, { team, played: 0, won: 0, drawn: 0, lost: 0, gf: 0, ga: 0, gd: 0, pts: 0 });
+  }
+
+  for (const fix of fixtures) {
+    const result = byTeams.get(teamsKey(fix.teamA, fix.teamB));
+    if (!result || result.state !== 'post') continue;
+
+    const [scoreA, scoreB] = result.score.split('–').map((s) => parseInt(s, 10) || 0);
+    const sA = standings.get(fix.teamA);
+    const sB = standings.get(fix.teamB);
+    if (!sA || !sB) continue;
+
+    sA.played++;
+    sB.played++;
+    sA.gf += scoreA;
+    sA.ga += scoreB;
+    sB.gf += scoreB;
+    sB.ga += scoreA;
+
+    if (result.winner === fix.teamA) {
+      sA.won++;
+      sA.pts += 3;
+      sB.lost++;
+    } else if (result.winner === fix.teamB) {
+      sB.won++;
+      sB.pts += 3;
+      sA.lost++;
+    } else {
+      sA.drawn++;
+      sB.drawn++;
+      sA.pts += 1;
+      sB.pts += 1;
+    }
+  }
+
+  for (const s of standings.values()) {
+    s.gd = s.gf - s.ga;
+  }
+
+  return [...standings.values()].sort((a, b) => {
+    if (b.pts !== a.pts) return b.pts - a.pts;
+    if (b.gd !== a.gd) return b.gd - a.gd;
+    return b.gf - a.gf;
+  });
+}
+
+function isEliminatedFromGroup(
+  team: string,
+  standings: TeamStanding[],
+): boolean {
+  const totalMatches = 3;
+  const teamStanding = standings.find((s) => s.team === team);
+  if (!teamStanding) return false;
+
+  const remainingMatches = totalMatches - teamStanding.played;
+  const maxPossiblePts = teamStanding.pts + remainingMatches * 3;
+
+  const pos = standings.findIndex((s) => s.team === team) + 1;
+  if (pos <= 3) return false;
+
+  const thirdPlace = standings[2];
+  if (!thirdPlace) return false;
+
+  const thirdMinPts = thirdPlace.pts;
+
+  if (maxPossiblePts < thirdMinPts) return true;
+
+  const allGroupMatchesPlayed = standings.every((s) => s.played === totalMatches);
+  if (allGroupMatchesPlayed && pos > 3) return true;
+
+  return false;
+}
+
+function GroupCard({
+  letter,
+  byTeams,
+  hasData,
+}: {
+  letter: string;
+  byTeams: Map<string, EspnResult>;
+  hasData: boolean;
+}) {
   const group = MODELS[0].groups.find((g) => g.letter === letter)!;
+  const standings = useMemo(
+    () => computeGroupStandings(letter, group.teams, byTeams),
+    [letter, group.teams, byTeams],
+  );
+  const hasResults = standings.some((s) => s.played > 0);
 
   return (
     <article className="group-card">
       <h3>Group {letter}</h3>
       <div className="group-table">
         <div className="group-row head">
-          <span>Pos</span>
-          <span>Team</span>
+          <span className="pos-col">Pos</span>
+          <span className="team-col">Team</span>
+          {hasData && (
+            <>
+              <span className="stat-col">P</span>
+              <span className="stat-col">W</span>
+              <span className="stat-col">D</span>
+              <span className="stat-col">L</span>
+              <span className="stat-col">GD</span>
+              <span className="stat-col pts-col">Pts</span>
+            </>
+          )}
           {MODELS.map((md) => (
             <span key={md.id} className={`col-h ${md.id}`}>{md.name}</span>
           ))}
         </div>
-        {group.teams.map((team, i) => (
-          <div key={team} className="group-row">
-            <span className="pos">{i + 1}</span>
-            <span className="team-name">{team}</span>
-            {MODELS.map((md) => {
-              const through = i < 2 || (i === 2 && md.bestThird.includes(team));
-              return (
-                <span key={md.id} className={`status ${through ? 'w' : 'l'}`}>
-                  {through ? (i === 2 ? '3rd ✓' : 'Through') : 'Out'}
-                </span>
-              );
-            })}
-          </div>
-        ))}
+        {(hasResults
+          ? standings
+          : [...standings].sort((a, b) => group.teams.indexOf(a.team) - group.teams.indexOf(b.team))
+        ).map((s, idx) => {
+          const pos = hasResults ? idx + 1 : group.teams.indexOf(s.team) + 1;
+          const eliminated = hasResults && isEliminatedFromGroup(s.team, standings);
+
+          return (
+            <div key={s.team} className={`group-row${eliminated ? ' eliminated' : ''}`}>
+              <span className="pos pos-col">{pos}</span>
+              <span className={`team-name team-col${eliminated ? ' strikeout' : ''}`}>{s.team}</span>
+              {hasData && (
+                <>
+                  <span className="stat-col">{s.played}</span>
+                  <span className="stat-col">{s.won}</span>
+                  <span className="stat-col">{s.drawn}</span>
+                  <span className="stat-col">{s.lost}</span>
+                  <span className="stat-col">{s.gd > 0 ? `+${s.gd}` : s.gd}</span>
+                  <span className="stat-col pts-col">{s.pts}</span>
+                </>
+              )}
+              {MODELS.map((md) => {
+                const predIdx = md.groups.find((g) => g.letter === letter)!.teams.indexOf(s.team as (typeof md.groups)[number]['teams'][number]);
+                const through = predIdx < 2 || (predIdx === 2 && md.bestThird.includes(s.team));
+                return (
+                  <span key={md.id} className={`status ${through ? 'w' : 'l'}`}>
+                    {through ? (predIdx === 2 ? '3rd ✓' : 'Through') : 'Out'}
+                  </span>
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
+      {hasResults && (
+        <p className="group-legend">Live standings · strikeout = mathematically eliminated</p>
+      )}
     </article>
   );
 }
@@ -476,7 +617,9 @@ export default function App() {
               ))}
             </div>
             <div className="group-grid">
-              {GROUP_LETTERS.map((letter) => <GroupCard key={letter} letter={letter} />)}
+              {GROUP_LETTERS.map((letter) => (
+                <GroupCard key={letter} letter={letter} byTeams={byTeams} hasData={hasData} />
+              ))}
             </div>
           </>
         )}
