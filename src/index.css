@@ -20,6 +20,44 @@ header {
 
 header h1 { font-size: 18px; font-weight: 700; }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fetch-btn {
+  border: none;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fetch-btn:disabled { opacity: 0.55; cursor: wait; }
+
+.fetch-err {
+  margin: 0;
+  padding: 8px 20px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.fetch-meta {
+  margin: 0;
+  padding: 6px 20px;
+  background: #f8f8fa;
+  border-bottom: 1px solid #eee;
+  font-size: 12px;
+  color: #666;
+}
+
 .search {
   width: 200px;
   padding: 7px 11px;
@@ -427,6 +465,7 @@ main { padding: 16px 20px 32px; }
 
 @media (max-width: 640px) {
   header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .header-actions { flex-direction: column; align-items: stretch; }
   .search { width: 100%; }
   .list, .group-grid { grid-template-columns: 1fr; }
   .group-row { grid-template-columns: 24px 1fr repeat(3, 58px); font-size: 11px; }

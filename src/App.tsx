@@ -244,7 +244,7 @@ export default function App() {
   const [date, setDate] = useState('');
   const [q, setQ] = useState('');
   const now = useNow();
-  const { byId, byTeams } = useEspnResults();
+  const { byId, byTeams, loading, error, lastFetchedAt, fetchMs, refresh, hasData } = useEspnResults();
 
   const accuracy = useMemo(
     () => computeModelAccuracy(MODELS, byId, byTeams),
@@ -308,8 +308,22 @@ export default function App() {
     <div className="page">
       <header>
         <h1>FIFA World Cup 2026</h1>
-        <input className="search" type="search" placeholder="Search team…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="header-actions">
+          <button type="button" className="fetch-btn" onClick={refresh} disabled={loading}>
+            {loading ? 'Fetching…' : 'Fetch results'}
+          </button>
+          <input className="search" type="search" placeholder="Search team…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
       </header>
+
+      {error && <p className="fetch-err">{error}</p>}
+      {lastFetchedAt && !error && (
+        <p className="fetch-meta">
+          Last updated {new Date(lastFetchedAt).toLocaleTimeString()}
+          {fetchMs > 0 && ` · ${fetchMs}ms`}
+          {!hasData && !loading && ' · click Fetch results'}
+        </p>
+      )}
 
       <div className="filters">
         <div className="pills">
@@ -388,7 +402,11 @@ export default function App() {
                 ))}
             </ul>
             {!fixtures.some((g) => lookup(g)?.state === 'post') && (
-              <p className="empty">No completed matches yet — check back after kickoff</p>
+              <p className="empty">
+                {hasData
+                  ? 'No completed matches yet — check back after kickoff'
+                  : 'Click Fetch results to load live scores from ESPN'}
+              </p>
             )}
           </>
         )}
