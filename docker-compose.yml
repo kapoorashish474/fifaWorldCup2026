@@ -4,3 +4,16 @@ services:
     ports:
       - "8080:80"
     restart: unless-stopped
+    depends_on:
+      - api
+
+  api:
+    build: ./api
+    ports:
+      - "3001:3001"
+    volumes:
+      - bets-data:/data
+    restart: unless-stopped
+
+volumes:
+  bets-data:

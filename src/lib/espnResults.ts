@@ -147,7 +147,7 @@ export interface ModelAccuracy {
 }
 
 export function computeModelAccuracy(
-  models: { id: string; name: string; matches: { id: string; teamA: string; teamB: string; winner: string }[] }[],
+  models: { id: string; name: string; matches: { id: string; stage?: string; teamA: string; teamB: string; winner: string }[] }[],
   byId: Map<string, EspnResult>,
   byTeams: Map<string, EspnResult>,
 ): ModelAccuracy[] {
@@ -155,6 +155,7 @@ export function computeModelAccuracy(
     let correct = 0;
     let total = 0;
     for (const m of md.matches) {
+      if (m.stage !== 'group') continue;
       const espnId = espnIdFromMatchId(m.id);
       const actual = lookupResult(espnId, m.teamA, m.teamB, byId, byTeams);
       if (!actual || actual.state !== 'post') continue;

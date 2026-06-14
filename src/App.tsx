@@ -33,6 +33,7 @@ import {
 import { NAV_TABS, TAB_LABELS, TAB_PATHS } from './lib/routes';
 import { useEspnResults, useNow } from './lib/useScheduleClock';
 import { usePathTab } from './lib/usePathTab';
+import { useBets } from './lib/useBets';
 
 interface Pick { m: MatchPrediction; md: ModelPrediction }
 
@@ -147,9 +148,9 @@ function SlotCard({
         <div className="fixture-head-line1">
           <span className="stage-tag">{stageLabel}</span>
           <span className="fixture-matchup">
-            <span className={actual?.winner === group.teamA ? 'w' : actual?.winner ? 'l' : ''}>{group.teamA}</span>
+            <span className={actual?.winner === group.teamA ? 'winner' : ''}>{group.teamA}</span>
             <span className="vs">vs</span>
-            <span className={actual?.winner === group.teamB ? 'w' : actual?.winner ? 'l' : ''}>{group.teamB}</span>
+            <span className={actual?.winner === group.teamB ? 'winner' : ''}>{group.teamB}</span>
           </span>
           <div className="fixture-head-badges">
             <StatusBadge timing={timing} kickoff={group.kickoff} now={now} actual={actual} />
@@ -338,56 +339,58 @@ function GroupCard({
     <article className="group-card">
       <h3>Group {letter}</h3>
       <div className="group-table">
-        <div className="group-row head">
-          <span className="pos-col">Pos</span>
-          <span className="team-col">Team</span>
-          {hasData && (
-            <>
-              <span className="stat-col">P</span>
-              <span className="stat-col">W</span>
-              <span className="stat-col">D</span>
-              <span className="stat-col">L</span>
-              <span className="stat-col">GD</span>
-              <span className="stat-col pts-col">Pts</span>
-            </>
-          )}
-          {MODELS.map((md) => (
-            <span key={md.id} className={`col-h ${md.id}`}>{md.name}</span>
-          ))}
-        </div>
-        {(hasResults
-          ? standings
-          : [...standings].sort((a, b) => group.teams.indexOf(a.team) - group.teams.indexOf(b.team))
-        ).map((s, idx) => {
-          const pos = hasResults ? idx + 1 : group.teams.indexOf(s.team) + 1;
-          const eliminated = hasResults && isEliminatedFromGroup(s.team, standings);
+        <div className="group-table-inner">
+          <div className="group-row head">
+            <span className="pos-col">Pos</span>
+            <span className="team-col">Team</span>
+            {hasData && (
+              <>
+                <span className="stat-col">P</span>
+                <span className="stat-col">W</span>
+                <span className="stat-col">D</span>
+                <span className="stat-col">L</span>
+                <span className="stat-col">GD</span>
+                <span className="stat-col pts-col">Pts</span>
+              </>
+            )}
+            {MODELS.map((md) => (
+              <span key={md.id} className={`col-h ${md.id}`}>{md.name}</span>
+            ))}
+          </div>
+          {(hasResults
+            ? standings
+            : [...standings].sort((a, b) => group.teams.indexOf(a.team) - group.teams.indexOf(b.team))
+          ).map((s, idx) => {
+            const pos = hasResults ? idx + 1 : group.teams.indexOf(s.team) + 1;
+            const eliminated = hasResults && isEliminatedFromGroup(s.team, standings);
 
-          return (
-            <div key={s.team} className={`group-row${eliminated ? ' eliminated' : ''}`}>
-              <span className="pos pos-col">{pos}</span>
-              <span className={`team-name team-col${eliminated ? ' strikeout' : ''}`}>{s.team}</span>
-              {hasData && (
-                <>
-                  <span className="stat-col">{s.played}</span>
-                  <span className="stat-col">{s.won}</span>
-                  <span className="stat-col">{s.drawn}</span>
-                  <span className="stat-col">{s.lost}</span>
-                  <span className="stat-col">{s.gd > 0 ? `+${s.gd}` : s.gd}</span>
-                  <span className="stat-col pts-col">{s.pts}</span>
-                </>
-              )}
-              {MODELS.map((md) => {
-                const predIdx = md.groups.find((g) => g.letter === letter)!.teams.indexOf(s.team as (typeof md.groups)[number]['teams'][number]);
-                const through = predIdx < 2 || (predIdx === 2 && md.bestThird.includes(s.team));
-                return (
-                  <span key={md.id} className={`status ${through ? 'w' : 'l'}`}>
-                    {through ? (predIdx === 2 ? '3rd ✓' : 'Through') : 'Out'}
-                  </span>
-                );
-              })}
-            </div>
-          );
-        })}
+            return (
+              <div key={s.team} className={`group-row${eliminated ? ' eliminated' : ''}`}>
+                <span className="pos pos-col">{pos}</span>
+                <span className={`team-name team-col${eliminated ? ' strikeout' : ''}`}>{s.team}</span>
+                {hasData && (
+                  <>
+                    <span className="stat-col">{s.played}</span>
+                    <span className="stat-col">{s.won}</span>
+                    <span className="stat-col">{s.drawn}</span>
+                    <span className="stat-col">{s.lost}</span>
+                    <span className="stat-col">{s.gd > 0 ? `+${s.gd}` : s.gd}</span>
+                    <span className="stat-col pts-col">{s.pts}</span>
+                  </>
+                )}
+                {MODELS.map((md) => {
+                  const predIdx = md.groups.find((g) => g.letter === letter)!.teams.indexOf(s.team as (typeof md.groups)[number]['teams'][number]);
+                  const through = predIdx < 2 || (predIdx === 2 && md.bestThird.includes(s.team));
+                  return (
+                    <span key={md.id} className={`status ${through ? 'w' : 'l'}`}>
+                      {through ? (predIdx === 2 ? '3rd ✓' : 'Through') : 'Out'}
+                    </span>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
       </div>
       {hasResults && (
         <p className="group-legend">Live standings · strikeout = mathematically eliminated</p>
@@ -404,6 +407,10 @@ export default function App() {
   const [team, setTeam] = useState('');
   const now = useNow();
   const { byId, byTeams, loading, error, lastFetchedAt, fetchMs, refresh, hasData } = useEspnResults();
+  const { bets, summary, error: betsError, addBet, settleBet, deleteBet } = useBets();
+
+  const [editingBet, setEditingBet] = useState<string | null>(null);
+  const [betInputs, setBetInputs] = useState<Record<string, { pick: string; stake: string }>>({});
 
   const accuracy = useMemo(
     () => computeModelAccuracy(MODELS, byId, byTeams),
@@ -585,7 +592,7 @@ export default function App() {
             <p className="meta">✓ = predicted winner matched final result · ✗ = wrong · draws count as wrong for all models</p>
             <ul className="list">
               {fixtures
-                .filter((g) => lookup(g)?.state === 'post')
+                .filter((g) => g.stage === 'group' && lookup(g)?.state === 'post')
                 .map((g) => (
                   <SlotCard
                     key={g.key}
@@ -596,7 +603,7 @@ export default function App() {
                   />
                 ))}
             </ul>
-            {!fixtures.some((g) => lookup(g)?.state === 'post') && (
+            {!fixtures.some((g) => g.stage === 'group' && lookup(g)?.state === 'post') && (
               <p className="empty">
                 {hasData
                   ? 'No completed matches yet — check back after kickoff'
@@ -642,6 +649,146 @@ export default function App() {
                 </ul>
               </article>
             ))}
+          </div>
+        )}
+
+        {tab === 'bets' && (
+          <div className="bets-page">
+            <div className="bets-summary">
+              <div className={`summary-card ${summary.netProfit >= 0 ? 'profit' : 'loss'}`}>
+                <span className="summary-label">Net Profit/Loss</span>
+                <span className="summary-value">${summary.netProfit.toFixed(2)}</span>
+              </div>
+              <div className="summary-card">
+                <span className="summary-label">Total Staked</span>
+                <span className="summary-value">${summary.totalBet.toFixed(2)}</span>
+              </div>
+              <div className="summary-card won">
+                <span className="summary-label">Total Won</span>
+                <span className="summary-value">${summary.totalWon.toFixed(2)}</span>
+              </div>
+              <div className="summary-card lost">
+                <span className="summary-label">Total Lost</span>
+                <span className="summary-value">${summary.totalLost.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {betsError && <p className="fetch-err">{betsError}</p>}
+            
+            <p className="meta">Click on any match to add your bet · {bets.filter(b => b.status !== 'pending').length} settled · {bets.filter(b => b.status === 'pending').length} pending</p>
+
+            <div className="matches-bet-list">
+              {GROUP_FIXTURES.map((fix) => {
+                const matchId = fix.id;
+                const existingBet = bets.find(b => b.matchId === matchId);
+                const isEditing = editingBet === matchId;
+                const inputs = betInputs[matchId] || { pick: '', stake: '' };
+                const actual = byTeams.get(teamsKey(fix.teamA, fix.teamB));
+                const isFinished = actual?.state === 'post';
+
+                return (
+                  <div
+                    key={matchId}
+                    className={`match-bet-row ${existingBet ? `has-bet status-${existingBet.status}` : ''} ${isFinished ? 'finished' : ''}`}
+                  >
+                    <div className="match-info">
+                      <span className="match-group">Group {fix.group}</span>
+                      <span className="match-teams">{fix.teamA} vs {fix.teamB}</span>
+                      <span className="match-date">{fmtKickoff(fix.kickoff)}</span>
+                      {isFinished && actual && (
+                        <span className="match-result">{actual.score} {actual.winner ? `→ ${actual.winner}` : '(Draw)'}</span>
+                      )}
+                    </div>
+
+                    {existingBet && !isEditing ? (
+                      <div className="bet-info">
+                        <span className="bet-pick">{existingBet.predictedWinner}</span>
+                        <span className="bet-stake">${existingBet.stake.toFixed(2)}</span>
+                        {existingBet.status === 'pending' ? (
+                          <div className="bet-quick-actions">
+                            <button type="button" className="btn-won" onClick={() => settleBet(existingBet.id, true)}>Won</button>
+                            <button type="button" className="btn-lost" onClick={() => settleBet(existingBet.id, false)}>Lost</button>
+                            <button type="button" className="btn-edit" onClick={() => {
+                              setEditingBet(matchId);
+                              setBetInputs({ ...betInputs, [matchId]: { pick: existingBet.predictedWinner, stake: existingBet.stake.toString() } });
+                            }}>Edit</button>
+                          </div>
+                        ) : (
+                          <div className="bet-quick-actions">
+                            <span className={`bet-outcome ${existingBet.status}`}>
+                              {existingBet.status === 'won' ? `+$${existingBet.stake.toFixed(2)}` : `-$${existingBet.stake.toFixed(2)}`}
+                            </span>
+                            <button type="button" className="btn-edit" onClick={() => {
+                              setEditingBet(matchId);
+                              setBetInputs({ ...betInputs, [matchId]: { pick: existingBet.predictedWinner, stake: existingBet.stake.toString() } });
+                            }}>Edit</button>
+                          </div>
+                        )}
+                      </div>
+                    ) : isEditing || (!existingBet && editingBet === matchId) ? (
+                      <div className="bet-form-inline">
+                        <select
+                          value={inputs.pick}
+                          onChange={(e) => setBetInputs({ ...betInputs, [matchId]: { ...inputs, pick: e.target.value } })}
+                        >
+                          <option value="">Pick</option>
+                          <option value={fix.teamA}>{fix.teamA}</option>
+                          <option value={fix.teamB}>{fix.teamB}</option>
+                          <option value="Draw">Draw</option>
+                        </select>
+                        <input
+                          type="number"
+                          placeholder="$"
+                          step="1"
+                          min="0"
+                          value={inputs.stake}
+                          onChange={(e) => setBetInputs({ ...betInputs, [matchId]: { ...inputs, stake: e.target.value } })}
+                        />
+                        <button
+                          type="button"
+                          className="btn-save"
+                          onClick={async () => {
+                            if (!inputs.pick || !inputs.stake) return;
+                            if (existingBet) {
+                              await deleteBet(existingBet.id);
+                            }
+                            await addBet({
+                              matchId,
+                              matchLabel: `${fix.teamA} vs ${fix.teamB}`,
+                              kickoff: fix.kickoff,
+                              predictedWinner: inputs.pick,
+                              stake: parseFloat(inputs.stake) || 0,
+                              odds: 1,
+                              status: 'pending',
+                              payout: 0,
+                            });
+                            setEditingBet(null);
+                            setBetInputs({ ...betInputs, [matchId]: { pick: '', stake: '' } });
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button type="button" className="btn-cancel" onClick={() => setEditingBet(null)}>Cancel</button>
+                        {existingBet && (
+                          <button type="button" className="btn-delete" onClick={async () => {
+                            await deleteBet(existingBet.id);
+                            setEditingBet(null);
+                          }}>Delete</button>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-add-bet"
+                        onClick={() => setEditingBet(matchId)}
+                      >
+                        + Bet
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </main>
