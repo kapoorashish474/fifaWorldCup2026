@@ -34,6 +34,7 @@ import { NAV_TABS, TAB_LABELS, TAB_PATHS } from './lib/routes';
 import { useEspnResults, useNow } from './lib/useScheduleClock';
 import { usePathTab } from './lib/usePathTab';
 import { useBets } from './lib/useBets';
+import { useLearning } from './lib/useLearning';
 
 interface Pick { m: MatchPrediction; md: ModelPrediction }
 
@@ -48,6 +49,20 @@ interface SlotGroup {
   teamA: string;
   teamB: string;
   picks: Pick[];
+}
+
+function formatFactorName(key: string): string {
+  const names: Record<string, string> = {
+    fifaRanking: 'FIFA Ranking',
+    groupPosition: 'Group Position',
+    tournamentForm: 'Tournament Form',
+    worldCupHistory: 'WC History',
+    squadValue: 'Squad Strength',
+    recentForm: 'Recent Form',
+    homeContinent: 'Home Advantage',
+    upsetPotential: 'Upset Factor',
+  };
+  return names[key] ?? key;
 }
 
 function fmtDateOption(iso: string) {
@@ -129,11 +144,13 @@ function SlotCard({
   timing,
   now,
   actual,
+  aiPrediction,
 }: {
   group: SlotGroup;
   timing: MatchTiming;
   now: number;
   actual?: EspnResult;
+  aiPrediction?: ReturnType<typeof import('./lib/predictionEngine').predictMatch>;
 }) {
   const st = stageInfo(group.stage);
   const winners = group.picks.map((p) => p.m.winner);
@@ -141,6 +158,8 @@ function SlotCard({
   const stageLabel = group.stage === 'group' && group.groupLetter
     ? `Group ${group.groupLetter}`
     : st.label;
+
+  const keyFactors = aiPrediction?.factors.filter(f => f.score !== 0).slice(0, 3) ?? [];
 
   return (
     <li className={`fixture timing-${timing}`} style={{ '--stage': st.color } as React.CSSProperties}>
@@ -177,6 +196,30 @@ function SlotCard({
       {actual && (actual.state === 'post' || actual.state === 'in') && (
         <ActualScore actual={actual} />
       )}
+      
+      {keyFactors.length > 0 && (
+        <div className="ai-factors">
+          <span className="factors-label">Factors:</span>
+          {keyFactors.map((f) => {
+            const factorPredictedWinner = f.score > 0 ? group.teamA : group.teamB;
+            const isFinished = actual?.state === 'post';
+            const worked = isFinished && (factorPredictedWinner === actual.winner || (!actual.winner && f.favoredTeam === 'Even'));
+            const failed = isFinished && !worked;
+            
+            return (
+              <span 
+                key={f.name} 
+                className={`ai-factor ${f.score > 0 ? 'favors-a' : 'favors-b'}${worked ? ' worked' : ''}${failed ? ' failed' : ''}`}
+              >
+                {formatFactorName(f.name)}: {f.favoredTeam}
+                {worked && ' ✓'}
+                {failed && ' ✗'}
+              </span>
+            );
+          })}
+        </div>
+      )}
+      
       <div className="picks">
         {group.picks.map(({ m, md }) => {
           const ok = actual ? predictionCorrect(m.winner, actual) : null;
@@ -399,15 +442,28 @@ function GroupCard({
   );
 }
 
+const ALL_FACTORS = [
+  { key: 'fifaRanking', label: 'FIFA Ranking' },
+  { key: 'groupPosition', label: 'Group Position' },
+  { key: 'tournamentForm', label: 'Tournament Form' },
+  { key: 'worldCupHistory', label: 'WC History' },
+  { key: 'squadValue', label: 'Squad Strength' },
+  { key: 'recentForm', label: 'Recent Form' },
+  { key: 'homeContinent', label: 'Home Advantage' },
+  { key: 'upsetPotential', label: 'Upset Factor' },
+] as const;
+
 export default function App() {
   const [tab, setTab] = usePathTab();
   const [model, setModel] = useState('all');
   const [stage, setStage] = useState<'all' | ScheduleStage>('all');
   const [date, setDate] = useState('');
   const [team, setTeam] = useState('');
+  const [factorFilter, setFactorFilter] = useState<'all' | 'worked' | 'failed' | string>('all');
   const now = useNow();
   const { byId, byTeams, loading, error, lastFetchedAt, fetchMs, refresh, hasData } = useEspnResults();
   const { bets, summary, error: betsError, addBet, settleBet, deleteBet } = useBets();
+  const { getPrediction } = useLearning();
 
   const [editingBet, setEditingBet] = useState<string | null>(null);
   const [betInputs, setBetInputs] = useState<Record<string, { pick: string; stake: string }>>({});
@@ -465,9 +521,40 @@ export default function App() {
     );
   }, [model, stage, date, team]);
 
-  const groupCount = fixtures.filter((f) => f.stage === 'group').length;
-  const knockoutCount = fixtures.filter((f) => f.stage !== 'group').length;
-  const liveCount = fixtures.filter((f) => getTiming(f) === 'live').length;
+  // Apply factor filter
+  const filteredFixtures = useMemo(() => {
+    if (factorFilter === 'all') return fixtures;
+    
+    return fixtures.filter((g) => {
+      if (g.stage !== 'group') return factorFilter === 'all';
+      
+      const actual = lookupResult(g.espnId, g.teamA, g.teamB, byId, byTeams);
+      if (!actual || actual.state !== 'post') return false;
+      
+      const aiPred = getPrediction(g.teamA, g.teamB);
+      const factorsWorked = aiPred.factors.filter(f => {
+        if (f.score === 0) return false;
+        const factorPredictedWinner = f.score > 0 ? g.teamA : g.teamB;
+        return factorPredictedWinner === actual.winner;
+      }).map(f => f.name);
+      
+      const factorsFailed = aiPred.factors.filter(f => {
+        if (f.score === 0) return false;
+        const factorPredictedWinner = f.score > 0 ? g.teamA : g.teamB;
+        return factorPredictedWinner !== actual.winner;
+      }).map(f => f.name);
+      
+      if (factorFilter === 'worked') return factorsWorked.length > 0;
+      if (factorFilter === 'failed') return factorsFailed.length > 0;
+      
+      // Filter by specific factor
+      return factorsWorked.includes(factorFilter);
+    });
+  }, [fixtures, factorFilter, byId, byTeams, getPrediction]);
+
+  const groupCount = filteredFixtures.filter((f) => f.stage === 'group').length;
+  const knockoutCount = filteredFixtures.filter((f) => f.stage !== 'group').length;
+  const liveCount = filteredFixtures.filter((f) => getTiming(f) === 'live').length;
   const scoredCount = accuracy.reduce((s, a) => s + a.total, 0);
 
   return (
@@ -541,7 +628,19 @@ export default function App() {
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
-            {(date || team || stage !== 'all' || model !== 'all') && (
+            {tab === 'schedule' && (
+              <select id="factor-filter" className="filter-select" value={factorFilter} onChange={(e) => setFactorFilter(e.target.value)} aria-label="Factor">
+                <option value="all">All factors</option>
+                <option value="worked">Factors worked</option>
+                <option value="failed">Factors failed</option>
+                <optgroup label="Specific factor worked">
+                  {ALL_FACTORS.map((f) => (
+                    <option key={f.key} value={f.key}>{f.label}</option>
+                  ))}
+                </optgroup>
+              </select>
+            )}
+            {(date || team || stage !== 'all' || model !== 'all' || factorFilter !== 'all') && (
               <button
                 type="button"
                 className="filter-clear"
@@ -550,6 +649,7 @@ export default function App() {
                   setStage('all');
                   setDate('');
                   setTeam('');
+                  setFactorFilter('all');
                 }}
               >
                 Reset
@@ -569,8 +669,9 @@ export default function App() {
               {scoredCount > 0 && ` · ${scoredCount} with results`}
             </p>
             <ul className="list">
-              {fixtures.map((g) => {
+              {filteredFixtures.map((g) => {
                 const actual = lookup(g);
+                const aiPred = g.stage === 'group' ? getPrediction(g.teamA, g.teamB) : undefined;
                 return (
                   <SlotCard
                     key={g.key}
@@ -578,31 +679,85 @@ export default function App() {
                     timing={getTiming(g)}
                     now={now}
                     actual={actual}
+                    aiPrediction={aiPred}
                   />
                 );
               })}
             </ul>
-            {!fixtures.length && <p className="empty">No matches — adjust filters</p>}
+            {!filteredFixtures.length && <p className="empty">No matches — adjust filters</p>}
           </>
         )}
 
         {tab === 'accuracy' && (
           <>
             <AccuracyBoard scores={accuracy} />
-            <p className="meta">✓ = predicted winner matched final result · ✗ = wrong · draws count as wrong for all models</p>
-            <ul className="list">
+            <p className="meta">✓ = predicted winner matched final result · ✗ = wrong · Click match to see AI analysis</p>
+            
+            <div className="accuracy-matches">
               {fixtures
                 .filter((g) => g.stage === 'group' && lookup(g)?.state === 'post')
-                .map((g) => (
-                  <SlotCard
-                    key={g.key}
-                    group={g}
-                    timing="finished"
-                    now={now}
-                    actual={lookup(g)}
-                  />
-                ))}
-            </ul>
+                .map((g) => {
+                  const actual = lookup(g);
+                  const aiPred = getPrediction(g.teamA, g.teamB);
+                  const aiCorrect = aiPred.predictedWinner === actual?.winner || 
+                    (aiPred.predictedWinner === 'Draw' && !actual?.winner);
+                  
+                  return (
+                    <details key={g.key} className={`accuracy-card ${aiCorrect ? 'correct' : 'wrong'}`}>
+                      <summary className="accuracy-summary">
+                        <span className="acc-match">{g.teamA} vs {g.teamB}</span>
+                        <span className="acc-result">Result: {actual?.score} → {actual?.winner || 'Draw'}</span>
+                        <span className="acc-ai-pred">AI: {aiPred.predictedWinner} ({aiPred.confidence}%)</span>
+                        <span className={`acc-verdict ${aiCorrect ? 'ok' : 'bad'}`}>
+                          {aiCorrect ? '✓ Correct' : '✗ Wrong'}
+                        </span>
+                      </summary>
+                      <div className="accuracy-analysis">
+                        <h4>Why AI predicted {aiPred.predictedWinner}:</h4>
+                        <div className="factor-analysis">
+                          {aiPred.factors.map((f) => {
+                            const factorCorrect = f.favoredTeam === actual?.winner || 
+                              (f.favoredTeam === 'Even' && !actual?.winner) ||
+                              f.score === 0;
+                            return (
+                              <div key={f.name} className={`factor-row ${f.score === 0 ? 'neutral' : factorCorrect ? 'factor-correct' : 'factor-wrong'}`}>
+                                <span className="factor-name">{formatFactorName(f.name)}</span>
+                                <span className="factor-favors">
+                                  {f.score === 0 ? 'Neutral' : `→ ${f.favoredTeam}`}
+                                </span>
+                                <span className="factor-reason">{f.reason}</span>
+                                {f.score !== 0 && (
+                                  <span className={`factor-verdict ${factorCorrect ? 'ok' : 'bad'}`}>
+                                    {factorCorrect ? '✓' : '✗'}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="analysis-summary">
+                          {aiCorrect ? (
+                            <p className="summary-correct">
+                              <strong>Why it worked:</strong> Key factors (
+                              {aiPred.factors.filter(f => f.score !== 0 && f.favoredTeam === actual?.winner).map(f => formatFactorName(f.name)).join(', ') || 'combination'}
+                              ) correctly pointed to {actual?.winner}.
+                            </p>
+                          ) : (
+                            <p className="summary-wrong">
+                              <strong>Why it failed:</strong> {
+                                actual?.winner 
+                                  ? `${actual.winner} overcame predictions. Misleading factors: ${aiPred.factors.filter(f => f.score !== 0 && f.favoredTeam !== actual?.winner && f.favoredTeam !== 'Even').map(f => formatFactorName(f.name)).join(', ') || 'most factors'}.`
+                                  : 'Match ended in draw, but AI expected a winner.'
+                              }
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </details>
+                  );
+                })}
+            </div>
+            
             {!fixtures.some((g) => g.stage === 'group' && lookup(g)?.state === 'post') && (
               <p className="empty">
                 {hasData
@@ -791,6 +946,7 @@ export default function App() {
             </div>
           </div>
         )}
+
       </main>
     </div>
   );

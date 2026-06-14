@@ -1,6 +1,7 @@
 import { GROUP_FIXTURES, type GroupFixture } from './groupSchedule';
 import { KNOCKOUT_KICKOFFS } from './knockoutKickoffs';
 import { KNOCKOUT_VENUES } from './knockoutVenues';
+import { applyOverride } from './overrides';
 
 export type Confidence = 'high' | 'moderate' | 'low';
 
@@ -289,12 +290,17 @@ function groupConfidence(rankW: number, rankL: number): Confidence {
 function mkGroup(md: ModelPrediction, f: GroupFixture, slot: number): MatchPrediction {
   const rankA = teamRank(md, f.teamA, f.group);
   const rankB = teamRank(md, f.teamB, f.group);
-  const aWins = rankA < rankB;
-  const winner = aWins ? f.teamA : f.teamB;
+  const defaultAWins = rankA < rankB;
+  const defaultWinner = defaultAWins ? f.teamA : f.teamB;
   const rankW = Math.min(rankA, rankB);
   const rankL = Math.max(rankA, rankB);
+  const defaultConfidence = groupConfidence(rankW, rankL);
+  
+  // Apply override if exists
+  const { winner, confidence } = applyOverride(f.teamA, f.teamB, defaultWinner, defaultConfidence);
+  const aWins = winner === f.teamA;
+  
   const id = `${md.id}-grp-${f.id}`;
-  const confidence = groupConfidence(rankW, rankL);
   return {
     id,
     kickoff: f.kickoff,
@@ -305,7 +311,7 @@ function mkGroup(md: ModelPrediction, f: GroupFixture, slot: number): MatchPredi
     teamA: f.teamA,
     teamB: f.teamB,
     winner,
-    score: groupMatchScore(rankW, rankL, id, aWins),
+    score: winner === 'Draw' ? '1-1' : groupMatchScore(rankW, rankL, id, aWins),
     confidence,
     pct: variedPct(id, confidence),
   };

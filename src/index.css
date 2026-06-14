@@ -807,6 +807,454 @@ main { padding: 16px 20px 32px; }
   box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
 }
 
+/* Accuracy Analysis */
+.accuracy-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.accuracy-card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  overflow: hidden;
+  border-left: 4px solid #666;
+}
+
+.accuracy-card.correct { border-left-color: #15803d; }
+.accuracy-card.wrong { border-left-color: #b91c1c; }
+
+.accuracy-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.accuracy-summary::-webkit-details-marker { display: none; }
+
+.accuracy-summary::before {
+  content: '▶';
+  font-size: 10px;
+  color: #8e8e93;
+  transition: transform 0.2s;
+}
+
+details[open] .accuracy-summary::before {
+  transform: rotate(90deg);
+}
+
+.acc-match {
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+  min-width: 150px;
+}
+
+.acc-result {
+  font-size: 12px;
+  color: #666;
+}
+
+.acc-ai-pred {
+  font-size: 12px;
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+.acc-verdict {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 4px;
+}
+
+.acc-verdict.ok { background: #dcfce7; color: #15803d; }
+.acc-verdict.bad { background: #fee2e2; color: #b91c1c; }
+
+.accuracy-analysis {
+  padding: 16px;
+  background: #f8f8fa;
+  border-top: 1px solid #eee;
+}
+
+.accuracy-analysis h4 {
+  font-size: 12px;
+  margin-bottom: 12px;
+  color: #666;
+}
+
+.factor-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.factor-row {
+  display: grid;
+  grid-template-columns: 120px 80px 1fr 30px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 6px;
+  font-size: 11px;
+  border-left: 3px solid #e5e7eb;
+}
+
+.factor-row.factor-correct { border-left-color: #15803d; background: #f0fdf4; }
+.factor-row.factor-wrong { border-left-color: #b91c1c; background: #fef2f2; }
+.factor-row.neutral { border-left-color: #d1d5db; opacity: 0.7; }
+
+.factor-name { font-weight: 600; }
+.factor-favors { color: #3b82f6; font-weight: 500; }
+.factor-reason { color: #666; font-size: 10px; }
+.factor-verdict { font-weight: 700; text-align: center; }
+.factor-verdict.ok { color: #15803d; }
+.factor-verdict.bad { color: #b91c1c; }
+
+.analysis-summary {
+  padding: 12px;
+  background: #fff;
+  border-radius: 6px;
+}
+
+.analysis-summary p {
+  font-size: 12px;
+  margin: 0;
+}
+
+.summary-correct { color: #15803d; }
+.summary-wrong { color: #b91c1c; }
+
+/* Learning Page - Redesigned */
+.learning-page { max-width: 900px; }
+
+.upcoming-predictions h3 {
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.section-desc {
+  font-size: 12px;
+  color: #8e8e93;
+  margin-bottom: 16px;
+}
+
+.prediction-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.prediction-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.pred-card-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.pred-card-summary:hover { background: #f8f9fa; }
+
+.prediction-card[open] .pred-card-summary {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.pred-card-match {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pred-card-group {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #8e8e93;
+  font-weight: 600;
+}
+
+.pred-card-teams {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pred-card-date {
+  font-size: 11px;
+  color: #666;
+}
+
+.pred-card-result {
+  text-align: right;
+}
+
+.pred-card-winner {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #15803d;
+}
+
+.pred-card-conf {
+  font-size: 11px;
+  color: #666;
+}
+
+.pred-card-detail {
+  padding: 16px;
+  background: #f8f9fa;
+}
+
+.factor-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.factors-for h5 {
+  font-size: 11px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  color: #666;
+}
+
+.factors-for.team-a h5 { color: #1d4ed8; }
+.factors-for.team-b h5 { color: #be185d; }
+
+.factor-item {
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  border-left: 3px solid #e5e7eb;
+}
+
+.factors-for.team-a .factor-item { border-left-color: #3b82f6; }
+.factors-for.team-b .factor-item { border-left-color: #ec4899; }
+
+.f-name {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.f-reason {
+  font-size: 11px;
+  color: #666;
+}
+
+.no-factors {
+  font-size: 11px;
+  color: #999;
+  font-style: italic;
+  margin: 0;
+}
+
+.learning-bottom {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.factor-weights-section,
+.test-section {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.factor-weights-section h3,
+.test-section h3 {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.weights-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.weight-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.w-name {
+  width: 110px;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.w-bar {
+  height: 8px;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  border-radius: 4px;
+}
+
+.w-val {
+  width: 32px;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #666;
+}
+
+.test-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.test-form select {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #d1d1d6;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.vs-label {
+  font-size: 11px;
+  color: #8e8e93;
+}
+
+.test-result {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.test-output {
+  text-align: center;
+}
+
+.test-winner {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: #15803d;
+  margin-bottom: 4px;
+}
+
+.test-conf {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 12px;
+  display: block;
+}
+
+.test-factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.tf {
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: #e5e7eb;
+}
+
+.tf.a { background: #dbeafe; color: #1d4ed8; }
+.tf.b { background: #fce7f3; color: #be185d; }
+
+/* Factor Tags in Schedule Cards */
+.ai-factors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-top: 1px solid #e5e7eb;
+}
+
+.factors-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #8e8e93;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.ai-factor {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+}
+
+.ai-factor.favors-a { border-color: #93c5fd; color: #1d4ed8; }
+.ai-factor.favors-b { border-color: #f9a8d4; color: #be185d; }
+
+.ai-factor.worked { 
+  background: #dcfce7; 
+  border-color: #86efac; 
+  color: #15803d; 
+}
+
+.ai-factor.failed { 
+  background: #fee2e2; 
+  border-color: #fca5a5; 
+  color: #b91c1c; 
+}
+
+/* Factors Result Row */
+.factors-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #fefefe;
+  border-top: 1px solid #e5e7eb;
+  font-size: 11px;
+}
+
+.factors-worked,
+.factors-failed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fr-label {
+  font-weight: 600;
+  font-size: 10px;
+}
+
+.factors-worked { color: #15803d; }
+.factors-failed { color: #b91c1c; }
+
+.empty-small {
+  font-size: 12px;
+  color: #8e8e93;
+  text-align: center;
+  padding: 20px;
+}
+
 @media (max-width: 640px) {
   .header-top {
     flex-direction: column;
@@ -845,4 +1293,7 @@ main { padding: 16px 20px 32px; }
   .bet-form-inline { flex-wrap: wrap; }
   .bet-form-inline select { flex: 1; min-width: 80px; }
   .bet-form-inline input { flex: 1; min-width: 60px; }
+  .accuracy-summary { gap: 8px; }
+  .acc-match { min-width: 100%; }
+  .factor-row { grid-template-columns: 90px 70px 1fr 24px; font-size: 10px; }
 }
