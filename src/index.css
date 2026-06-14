@@ -1192,16 +1192,32 @@ details[open] .accuracy-summary::before {
 }
 
 .match-header {
-  padding: 10px 14px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.match-main {
+.match-top-row {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.match-info-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.match-datetime {
+  color: #6b7280;
+}
+
+.match-venue {
+  color: #9ca3af;
 }
 
 .match-stage {
@@ -1280,12 +1296,6 @@ details[open] .accuracy-summary::before {
 .factor-tag.result.good { background: #dcfce7; color: #15803d; }
 .factor-tag.result.bad { background: #fee2e2; color: #b91c1c; }
 
-.match-meta {
-  font-size: 11px;
-  color: #666;
-  padding: 0 14px 8px;
-  border-bottom: 1px solid #f0f0f0;
-}
 
 .factors-breakdown {
   display: flex;
@@ -1294,6 +1304,8 @@ details[open] .accuracy-summary::before {
   padding: 8px 14px;
   background: #f9fafb;
   border-top: 1px solid #e5e7eb;
+  max-height: 76px;
+  overflow: hidden;
 }
 
 .factor-chip {
@@ -1408,5 +1420,6 @@ details[open] .accuracy-summary::before {
   .match-teams { font-size: 12px; flex-wrap: wrap; }
   .match-factors { padding-left: 0; }
   .team-a, .team-b { flex: none; }
-  .match-main { flex-wrap: wrap; }
+  .match-top-row { flex-wrap: wrap; }
+  .match-info-row { flex-wrap: wrap; }
 }

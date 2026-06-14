@@ -172,7 +172,7 @@ function SlotCard({
   return (
     <div className={`match-card timing-${timing}`} style={{ '--stage': st.color } as React.CSSProperties}>
       <div className="match-header">
-        <div className="match-main">
+        <div className="match-top-row">
           <span className="match-stage">{stageLabel}</span>
           <span className="match-teams">
             <span className={`team-a${actual?.winner === group.teamA ? ' winner' : ''}`}>
@@ -188,6 +188,10 @@ function SlotCard({
             </span>
           </span>
           <StatusBadge timing={timing} kickoff={group.kickoff} now={now} actual={actual} />
+        </div>
+        <div className="match-info-row">
+          <span className="match-datetime">{fmtKickoff(group.kickoff)}</span>
+          {group.venue && <span className="match-venue">· {group.venue}</span>}
         </div>
         <div className="match-factors">
           {higherRanked ? (
@@ -217,14 +221,19 @@ function SlotCard({
         </div>
       </div>
       
-      <div className="match-meta">
-        <span>{fmtKickoff(group.kickoff)}</span>
-        {group.venue && <span> · {group.venue}</span>}
-      </div>
+      {actual && (actual.state === 'post' || actual.state === 'in') && (
+        <div className="actual-row">
+          <span className="actual-label">{actual.state === 'in' ? 'Live' : 'Result'}</span>
+          <span className={actual.winner === group.teamA ? 'w' : actual.winner ? 'l' : ''}>{group.teamA}</span>
+          <span className="sc">{actual.score}</span>
+          <span className={actual.winner === group.teamB ? 'w' : actual.winner ? 'l' : ''}>{group.teamB}</span>
+          {!actual.winner && actual.state === 'post' && <span className="draw-tag">Draw</span>}
+        </div>
+      )}
       
       {keyFactors.length > 0 && (
         <div className="factors-breakdown">
-          {keyFactors.map((f) => {
+          {keyFactors.slice(0, 6).map((f) => {
             const predicted = f.score > 0 ? group.teamA : group.teamB;
             const worked = isFinished ? predicted === actual?.winner : null;
             return (
