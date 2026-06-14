@@ -36,6 +36,7 @@ import { usePathTab } from './lib/usePathTab';
 import { useBets } from './lib/useBets';
 import { useLearning } from './lib/useLearning';
 import { FIFA_RANKINGS, WORLD_CUP_TITLES, RECENT_FORM } from './lib/predictionEngine';
+import { ROBINHOOD_BETS, CATEGORY_LABELS, DIFFICULTY_COLORS, type BetCategory } from './data/robinhoodBets';
 
 // Classic rivalries
 const RIVALRIES: Record<string, string> = {
@@ -45,6 +46,13 @@ const RIVALRIES: Record<string, string> = {
   'England-Germany': 'Historic rivalry', 'France-Italy': 'WC 2006 Final',
   'USA-Mexico': 'CONCACAF rivalry', 'Japan-South Korea': 'East Asian rivalry',
 };
+
+// Unique locations/cities from venues
+const ALL_LOCATIONS = [...new Set(
+  GROUP_FIXTURES
+    .map(f => f.venue?.split(' · ')[1]?.trim())
+    .filter((v): v is string => !!v)
+)].sort();
 
 interface Pick { m: MatchPrediction; md: ModelPrediction }
 
@@ -417,6 +425,7 @@ function GroupCard({
           <div className="group-row head">
             <span className="pos-col">Pos</span>
             <span className="team-col">Team</span>
+            <span className="rank-col">Rank</span>
             {hasData && (
               <>
                 <span className="stat-col">P</span>
@@ -442,6 +451,7 @@ function GroupCard({
               <div key={s.team} className={`group-row${eliminated ? ' eliminated' : ''}`}>
                 <span className="pos pos-col">{pos}</span>
                 <span className={`team-name team-col${eliminated ? ' strikeout' : ''}`}>{s.team}</span>
+                <span className="rank-col">#{FIFA_RANKINGS[s.team] ?? '-'}</span>
                 {hasData && (
                   <>
                     <span className="stat-col">{s.played}</span>
@@ -490,6 +500,7 @@ export default function App() {
   const [stage, setStage] = useState<'all' | ScheduleStage>('all');
   const [date, setDate] = useState('');
   const [team, setTeam] = useState('');
+  const [location, setLocation] = useState('all');
   const [factorFilter, setFactorFilter] = useState<'all' | 'worked' | 'failed' | string>('all');
   const now = useNow();
   const { byId, byTeams, loading, error, lastFetchedAt, fetchMs, refresh, hasData } = useEspnResults();
@@ -523,6 +534,7 @@ export default function App() {
         if (stage !== 'all' && stage !== m.stage) continue;
         if (date && localDateKey(m.kickoff) !== date) continue;
         if (team && m.teamA !== team && m.teamB !== team) continue;
+        if (location !== 'all' && m.venue && !m.venue.toLowerCase().includes(location.toLowerCase())) continue;
 
         const key = model === 'all' ? slotKey(m) : `${slotKey(m)}|${m.teamA}|${m.teamB}`;
         if (!map.has(key)) {
@@ -550,7 +562,7 @@ export default function App() {
     return [...map.values()].sort(
       (a, b) => a.kickoff.localeCompare(b.kickoff) || a.slot - b.slot,
     );
-  }, [model, stage, date, team]);
+  }, [model, stage, date, team, location]);
 
   // Apply factor filter
   const filteredFixtures = useMemo(() => {
@@ -651,6 +663,10 @@ export default function App() {
                   <option value="">All dates</option>
                   {ALL_DATES.map((d) => <option key={d} value={d}>{fmtDateOption(d)}</option>)}
                 </select>
+                <select id="location-filter" className="filter-select" value={location} onChange={(e) => setLocation(e.target.value)} aria-label="Location">
+                  <option value="all">All locations</option>
+                  {ALL_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+                </select>
               </>
             )}
             <select id="team-filter" className="filter-select filter-select-team" value={team} onChange={(e) => setTeam(e.target.value)} aria-label="Team">
@@ -671,7 +687,7 @@ export default function App() {
                 </optgroup>
               </select>
             )}
-            {(date || team || stage !== 'all' || model !== 'all' || factorFilter !== 'all') && (
+            {(date || team || location !== 'all' || stage !== 'all' || model !== 'all' || factorFilter !== 'all') && (
               <button
                 type="button"
                 className="filter-clear"
@@ -680,6 +696,7 @@ export default function App() {
                   setStage('all');
                   setDate('');
                   setTeam('');
+                  setLocation('all');
                   setFactorFilter('all');
                 }}
               >
@@ -722,7 +739,7 @@ export default function App() {
         {tab === 'accuracy' && (
           <>
             <AccuracyBoard scores={accuracy} />
-            <p className="meta">✓ = predicted winner matched final result · ✗ = wrong · Click match to see AI analysis</p>
+            <p className="meta">✓ = predicted winner matched final result · ✗ = wrong · Click match to see factor breakdown</p>
             
             <div className="accuracy-matches">
               {fixtures
@@ -730,56 +747,59 @@ export default function App() {
                 .map((g) => {
                   const actual = lookup(g);
                   const aiPred = getPrediction(g.teamA, g.teamB);
-                  const aiCorrect = aiPred.predictedWinner === actual?.winner || 
-                    (aiPred.predictedWinner === 'Draw' && !actual?.winner);
+                  
+                  // Get each model's prediction for this match
+                  const modelPreds = g.picks.map(({ m, md }) => {
+                    const isCorrect = actual?.winner 
+                      ? m.winner === actual.winner
+                      : m.winner === 'Draw' || (!actual?.winner && m.winner !== g.teamA && m.winner !== g.teamB);
+                    return { model: md.name, modelId: md.id, predicted: m.winner, correct: isCorrect };
+                  });
+                  
+                  const correctCount = modelPreds.filter(p => p.correct).length;
+                  const allCorrect = correctCount === modelPreds.length;
+                  const allWrong = correctCount === 0;
                   
                   return (
-                    <details key={g.key} className={`accuracy-card ${aiCorrect ? 'correct' : 'wrong'}`}>
+                    <details key={g.key} className={`accuracy-card ${allCorrect ? 'correct' : allWrong ? 'wrong' : 'mixed'}`}>
                       <summary className="accuracy-summary">
                         <span className="acc-match">{g.teamA} vs {g.teamB}</span>
                         <span className="acc-result">Result: {actual?.score} → {actual?.winner || 'Draw'}</span>
-                        <span className="acc-ai-pred">AI: {aiPred.predictedWinner} ({aiPred.confidence}%)</span>
-                        <span className={`acc-verdict ${aiCorrect ? 'ok' : 'bad'}`}>
-                          {aiCorrect ? '✓ Correct' : '✗ Wrong'}
+                        <span className="acc-models">
+                          {modelPreds.map((p) => (
+                            <span key={p.modelId} className={`model-pred ${p.modelId} ${p.correct ? 'ok' : 'bad'}`}>
+                              {p.model}: {p.predicted} {p.correct ? '✓' : '✗'}
+                            </span>
+                          ))}
                         </span>
                       </summary>
                       <div className="accuracy-analysis">
-                        <h4>Why AI predicted {aiPred.predictedWinner}:</h4>
+                        <h4>Factor Analysis:</h4>
                         <div className="factor-analysis">
-                          {aiPred.factors.map((f) => {
-                            const factorCorrect = f.favoredTeam === actual?.winner || 
-                              (f.favoredTeam === 'Even' && !actual?.winner) ||
-                              f.score === 0;
+                          {aiPred.factors.filter(f => f.score !== 0).map((f) => {
+                            const factorCorrect = f.favoredTeam === actual?.winner;
                             return (
-                              <div key={f.name} className={`factor-row ${f.score === 0 ? 'neutral' : factorCorrect ? 'factor-correct' : 'factor-wrong'}`}>
+                              <div key={f.name} className={`factor-row ${factorCorrect ? 'factor-correct' : 'factor-wrong'}`}>
                                 <span className="factor-name">{formatFactorName(f.name)}</span>
-                                <span className="factor-favors">
-                                  {f.score === 0 ? 'Neutral' : `→ ${f.favoredTeam}`}
-                                </span>
+                                <span className="factor-favors">→ {f.favoredTeam}</span>
                                 <span className="factor-reason">{f.reason}</span>
-                                {f.score !== 0 && (
-                                  <span className={`factor-verdict ${factorCorrect ? 'ok' : 'bad'}`}>
-                                    {factorCorrect ? '✓' : '✗'}
-                                  </span>
-                                )}
+                                <span className={`factor-verdict ${factorCorrect ? 'ok' : 'bad'}`}>
+                                  {factorCorrect ? '✓' : '✗'}
+                                </span>
                               </div>
                             );
                           })}
                         </div>
                         <div className="analysis-summary">
-                          {aiCorrect ? (
-                            <p className="summary-correct">
-                              <strong>Why it worked:</strong> Key factors (
-                              {aiPred.factors.filter(f => f.score !== 0 && f.favoredTeam === actual?.winner).map(f => formatFactorName(f.name)).join(', ') || 'combination'}
-                              ) correctly pointed to {actual?.winner}.
+                          {actual?.winner ? (
+                            <p className={correctCount > 0 ? 'summary-correct' : 'summary-wrong'}>
+                              <strong>{correctCount}/{modelPreds.length} models correct.</strong> {
+                                aiPred.factors.filter(f => f.score !== 0 && f.favoredTeam === actual.winner).length
+                              }/{aiPred.factors.filter(f => f.score !== 0).length} factors pointed to {actual.winner}.
                             </p>
                           ) : (
-                            <p className="summary-wrong">
-                              <strong>Why it failed:</strong> {
-                                actual?.winner 
-                                  ? `${actual.winner} overcame predictions. Misleading factors: ${aiPred.factors.filter(f => f.score !== 0 && f.favoredTeam !== actual?.winner && f.favoredTeam !== 'Even').map(f => formatFactorName(f.name)).join(', ') || 'most factors'}.`
-                                  : 'Match ended in draw, but AI expected a winner.'
-                              }
+                            <p className={correctCount > 0 ? 'summary-correct' : 'summary-wrong'}>
+                              <strong>Match ended in a draw.</strong> {correctCount}/{modelPreds.length} models predicted correctly.
                             </p>
                           )}
                         </div>
@@ -974,6 +994,102 @@ export default function App() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {tab === 'robinhood' && (
+          <div className="robinhood-page">
+            <p className="meta">
+              Analyzing {ROBINHOOD_BETS.length} FIFA World Cup betting markets · 
+              {ROBINHOOD_BETS.filter(b => b.difficulty === 'easy').length} easy · 
+              {ROBINHOOD_BETS.filter(b => b.difficulty === 'medium').length} medium · 
+              {ROBINHOOD_BETS.filter(b => b.difficulty === 'hard').length} hard
+            </p>
+
+            <div className="rh-filters">
+              <span className="filter-label">Filter by difficulty:</span>
+              <button className="rh-filter-btn active" data-filter="all">All</button>
+              <button className="rh-filter-btn easy" data-filter="easy">Easy</button>
+              <button className="rh-filter-btn medium" data-filter="medium">Medium</button>
+              <button className="rh-filter-btn hard" data-filter="hard">Hard</button>
+            </div>
+
+            {(['outright', 'group', 'player', 'special'] as BetCategory[]).map((category) => {
+              const categoryBets = ROBINHOOD_BETS.filter(b => b.category === category);
+              if (categoryBets.length === 0) return null;
+              return (
+                <div key={category} className="rh-category">
+                  <h3 className="rh-category-title">{CATEGORY_LABELS[category]} Markets</h3>
+                  <div className="rh-bets-grid">
+                    {categoryBets.map((bet) => (
+                      <div key={bet.id} className={`rh-bet-card difficulty-${bet.difficulty}`}>
+                        <div className="rh-bet-header">
+                          <span className="rh-bet-title">{bet.title}</span>
+                          <span 
+                            className={`rh-difficulty-badge ${bet.difficulty}`}
+                            style={{ backgroundColor: DIFFICULTY_COLORS[bet.difficulty] }}
+                          >
+                            {bet.difficulty.charAt(0).toUpperCase() + bet.difficulty.slice(1)}
+                          </span>
+                        </div>
+                        <p className="rh-bet-description">{bet.description}</p>
+                        <div className="rh-bet-options">
+                          {bet.options.slice(0, 6).map((opt) => (
+                            <span 
+                              key={opt} 
+                              className={`rh-option ${opt === bet.ourPick ? 'picked' : ''}`}
+                            >
+                              {opt}
+                              {opt === bet.ourPick && <span className="pick-indicator">★</span>}
+                            </span>
+                          ))}
+                          {bet.options.length > 6 && (
+                            <span className="rh-option more">+{bet.options.length - 6} more</span>
+                          )}
+                        </div>
+                        <div className="rh-our-pick">
+                          <div className="pick-header">
+                            <span className="pick-label">Our Pick:</span>
+                            <span className="pick-value">{bet.ourPick}</span>
+                            <span className={`confidence-badge ${bet.confidence >= 70 ? 'high' : bet.confidence >= 50 ? 'medium' : 'low'}`}>
+                              {bet.confidence}% confident
+                            </span>
+                          </div>
+                          <p className="pick-reasoning">{bet.reasoning}</p>
+                        </div>
+                        <div className="rh-bet-footer">
+                          <span className={`rh-status status-${bet.status}`}>
+                            {bet.status === 'open' ? '🔓 Open' : bet.status === 'won' ? '✓ Won' : bet.status === 'lost' ? '✗ Lost' : '⊘ Void'}
+                          </span>
+                          {bet.result && <span className="rh-result">Result: {bet.result}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="rh-summary">
+              <h3>Difficulty Legend</h3>
+              <div className="difficulty-legend">
+                <div className="legend-item">
+                  <span className="legend-dot easy" style={{ backgroundColor: DIFFICULTY_COLORS.easy }}></span>
+                  <span className="legend-label">Easy</span>
+                  <span className="legend-desc">High predictability, clear favorites</span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot medium" style={{ backgroundColor: DIFFICULTY_COLORS.medium }}></span>
+                  <span className="legend-label">Medium</span>
+                  <span className="legend-desc">Competitive field, some uncertainty</span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot hard" style={{ backgroundColor: DIFFICULTY_COLORS.hard }}></span>
+                  <span className="legend-label">Hard</span>
+                  <span className="legend-desc">Unpredictable, many variables</span>
+                </div>
+              </div>
             </div>
           </div>
         )}
