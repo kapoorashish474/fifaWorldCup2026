@@ -35,6 +35,16 @@ import { useEspnResults, useNow } from './lib/useScheduleClock';
 import { usePathTab } from './lib/usePathTab';
 import { useBets } from './lib/useBets';
 import { useLearning } from './lib/useLearning';
+import { FIFA_RANKINGS, WORLD_CUP_TITLES, RECENT_FORM } from './lib/predictionEngine';
+
+// Classic rivalries
+const RIVALRIES: Record<string, string> = {
+  'Argentina-Brazil': 'Superclásico', 'Argentina-England': 'Historic rivalry',
+  'Argentina-Germany': 'WC Finals history', 'Brazil-Germany': '7-1 revenge',
+  'Spain-Portugal': 'Iberian Derby', 'Netherlands-Germany': 'Classic rivalry',
+  'England-Germany': 'Historic rivalry', 'France-Italy': 'WC 2006 Final',
+  'USA-Mexico': 'CONCACAF rivalry', 'Japan-South Korea': 'East Asian rivalry',
+};
 
 interface Pick { m: MatchPrediction; md: ModelPrediction }
 
@@ -71,31 +81,6 @@ function fmtDateOption(iso: string) {
 
 function stageInfo(stage: MatchPrediction['stage']) {
   return ALL_STAGES.find((s) => s.key === stage)!;
-}
-
-function ActualScore({ actual }: { actual: EspnResult }) {
-  const aWin = actual.winner === actual.teamA;
-  const bWin = actual.winner === actual.teamB;
-  return (
-    <div className="actual-row">
-      <span className="actual-label">Result</span>
-      <span className={aWin ? 'w' : actual.winner ? 'l' : ''}>{actual.teamA}</span>
-      <span className="sc">{actual.score}</span>
-      <span className={bWin ? 'w' : actual.winner ? 'l' : ''}>{actual.teamB}</span>
-      {!actual.winner && actual.state === 'post' && <span className="draw-tag">Draw</span>}
-    </div>
-  );
-}
-
-function MiniFixture({ m }: { m: MatchPrediction }) {
-  const aWin = m.winner === m.teamA;
-  return (
-    <span className="mini-fixture">
-      <span className={aWin ? 'w' : 'l'}>{m.teamA}</span>
-      <span className="sc">{m.score}</span>
-      <span className={aWin ? 'l' : 'w'}>{m.teamB}</span>
-    </span>
-  );
 }
 
 function StatusBadge({
@@ -153,80 +138,117 @@ function SlotCard({
   aiPrediction?: ReturnType<typeof import('./lib/predictionEngine').predictMatch>;
 }) {
   const st = stageInfo(group.stage);
-  const winners = group.picks.map((p) => p.m.winner);
-  const consensus = winners.length > 1 && winners.every((w) => w === winners[0]);
   const stageLabel = group.stage === 'group' && group.groupLetter
-    ? `Group ${group.groupLetter}`
+    ? `Grp ${group.groupLetter}`
     : st.label;
 
-  const keyFactors = aiPrediction?.factors.filter(f => f.score !== 0).slice(0, 3) ?? [];
+  // Get team data for concise display
+  const rankA = FIFA_RANKINGS[group.teamA] ?? 50;
+  const rankB = FIFA_RANKINGS[group.teamB] ?? 50;
+  const formA = RECENT_FORM[group.teamA] ?? 0;
+  const formB = RECENT_FORM[group.teamB] ?? 0;
+  const titlesA = WORLD_CUP_TITLES[group.teamA] ?? 0;
+  const titlesB = WORLD_CUP_TITLES[group.teamB] ?? 0;
+  // Host countries only (not all NA teams)
+  const HOST_COUNTRIES = ['USA', 'Mexico', 'Canada'];
+  const isHomeA = HOST_COUNTRIES.includes(group.teamA);
+  const isHomeB = HOST_COUNTRIES.includes(group.teamB);
+  
+  // Check for rivalry
+  const rivalryKey1 = `${group.teamA}-${group.teamB}`;
+  const rivalryKey2 = `${group.teamB}-${group.teamA}`;
+  const rivalry = RIVALRIES[rivalryKey1] || RIVALRIES[rivalryKey2];
+
+  // Build uniform factors list
+  const rankDiff = Math.abs(rankA - rankB);
+  const higherRanked = rankA < rankB ? group.teamA : rankA > rankB ? group.teamB : null;
+  const betterForm = formA > formB ? group.teamA : formB > formA ? group.teamB : null;
+  
+  // All factors with details
+  const allFactors = aiPrediction?.factors ?? [];
+  const keyFactors = allFactors.filter(f => f.score !== 0);
+  const isFinished = actual?.state === 'post';
 
   return (
-    <li className={`fixture timing-${timing}`} style={{ '--stage': st.color } as React.CSSProperties}>
-      <div className="fixture-head">
-        <div className="fixture-head-line1">
-          <span className="stage-tag">{stageLabel}</span>
-          <span className="fixture-matchup">
-            <span className={actual?.winner === group.teamA ? 'winner' : ''}>{group.teamA}</span>
-            <span className="vs">vs</span>
-            <span className={actual?.winner === group.teamB ? 'winner' : ''}>{group.teamB}</span>
+    <div className={`match-card timing-${timing}`} style={{ '--stage': st.color } as React.CSSProperties}>
+      <div className="match-header">
+        <div className="match-main">
+          <span className="match-stage">{stageLabel}</span>
+          <span className="match-teams">
+            <span className={`team-a${actual?.winner === group.teamA ? ' winner' : ''}`}>
+              {group.teamA} <span className="rank">#{rankA}</span>
+            </span>
+            {actual && (actual.state === 'post' || actual.state === 'in') ? (
+              <span className="match-score">{actual.score}</span>
+            ) : (
+              <span className="match-vs">vs</span>
+            )}
+            <span className={`team-b${actual?.winner === group.teamB ? ' winner' : ''}`}>
+              <span className="rank">#{rankB}</span> {group.teamB}
+            </span>
           </span>
-          <div className="fixture-head-badges">
-            <StatusBadge timing={timing} kickoff={group.kickoff} now={now} actual={actual} />
-            {actual?.state === 'post' && consensus && actual.winner && (
-              <span className="consensus">{group.picks.length}/{group.picks.length} → {winners[0]}</span>
-            )}
-            {actual?.state === 'post' && !consensus && (
-              <span className="split-vote">Split</span>
-            )}
-          </div>
+          <StatusBadge timing={timing} kickoff={group.kickoff} now={now} actual={actual} />
         </div>
-        <div className="fixture-head-line2">
-          <span className="date">{fmtKickoff(group.kickoff)}</span>
-          {group.venue && <span className="venue-sep">·</span>}
-          {group.venue && <span className="venue">{group.venue}</span>}
-          {group.stage !== 'group' && (
-            <>
-              <span className="venue-sep">·</span>
-              <span className="slot">Match #{group.slot + 1}</span>
-            </>
+        <div className="match-factors">
+          {higherRanked ? (
+            <span className="factor-tag rank">Rank: {higherRanked} {rankDiff > 20 ? '↑↑' : '↑'}</span>
+          ) : (
+            <span className="factor-tag rank">Rank: Even</span>
+          )}
+          {betterForm ? (
+            <span className="factor-tag form">Form: {betterForm} ↑</span>
+          ) : (
+            <span className="factor-tag form">Form: Even</span>
+          )}
+          {(isHomeA || isHomeB) && (
+            <span className="factor-tag home">🏠 {isHomeA ? group.teamA : group.teamB}</span>
+          )}
+          {(titlesA > 0 || titlesB > 0) && (
+            <span className="factor-tag titles">
+              🏆 {titlesA > titlesB ? `${group.teamA} (${titlesA})` : titlesB > titlesA ? `${group.teamB} (${titlesB})` : `Both`}
+            </span>
+          )}
+          {rivalry && <span className="factor-tag rivalry">⚔️ {rivalry}</span>}
+          {isFinished && keyFactors.length > 0 && (
+            <span className={`factor-tag result ${keyFactors.filter(f => (f.score > 0 ? group.teamA : group.teamB) === actual?.winner).length > keyFactors.length / 2 ? 'good' : 'bad'}`}>
+              {keyFactors.filter(f => (f.score > 0 ? group.teamA : group.teamB) === actual?.winner).length}/{keyFactors.length} ✓
+            </span>
           )}
         </div>
       </div>
-      {actual && (actual.state === 'post' || actual.state === 'in') && (
-        <ActualScore actual={actual} />
-      )}
+      
+      <div className="match-meta">
+        <span>{fmtKickoff(group.kickoff)}</span>
+        {group.venue && <span> · {group.venue}</span>}
+      </div>
       
       {keyFactors.length > 0 && (
-        <div className="ai-factors">
-          <span className="factors-label">Factors:</span>
+        <div className="factors-breakdown">
           {keyFactors.map((f) => {
-            const factorPredictedWinner = f.score > 0 ? group.teamA : group.teamB;
-            const isFinished = actual?.state === 'post';
-            const worked = isFinished && (factorPredictedWinner === actual.winner || (!actual.winner && f.favoredTeam === 'Even'));
-            const failed = isFinished && !worked;
-            
+            const predicted = f.score > 0 ? group.teamA : group.teamB;
+            const worked = isFinished ? predicted === actual?.winner : null;
             return (
               <span 
                 key={f.name} 
-                className={`ai-factor ${f.score > 0 ? 'favors-a' : 'favors-b'}${worked ? ' worked' : ''}${failed ? ' failed' : ''}`}
+                className={`factor-chip ${isFinished ? (worked ? 'worked' : 'failed') : 'pending'}`}
+                title={f.reason}
               >
                 {formatFactorName(f.name)}: {f.favoredTeam}
-                {worked && ' ✓'}
-                {failed && ' ✗'}
+                {isFinished && (worked ? ' ✓' : ' ✗')}
               </span>
             );
           })}
         </div>
       )}
       
-      <div className="picks">
+      <div className="model-picks">
         {group.picks.map(({ m, md }) => {
           const ok = actual ? predictionCorrect(m.winner, actual) : null;
           return (
-            <div key={m.id} className={`pick ${md.id}`}>
-              <span className="pick-name">{md.name}</span>
-              <MiniFixture m={m} />
+            <div key={m.id} className={`model-pick ${md.id}`}>
+              <span className="pick-model">{md.name}</span>
+              <span className="pick-winner">{m.winner}</span>
+              <span className="pick-score">{m.score}</span>
               <span className={`pick-conf ${pctClass(m.pct)}`}>{m.pct}%</span>
               {ok === true && <span className="ok">✓</span>}
               {ok === false && <span className="bad">✗</span>}
@@ -234,7 +256,7 @@ function SlotCard({
           );
         })}
       </div>
-    </li>
+    </div>
   );
 }
 
@@ -671,7 +693,7 @@ export default function App() {
             <ul className="list">
               {filteredFixtures.map((g) => {
                 const actual = lookup(g);
-                const aiPred = g.stage === 'group' ? getPrediction(g.teamA, g.teamB) : undefined;
+                const aiPred = getPrediction(g.teamA, g.teamB);
                 return (
                   <SlotCard
                     key={g.key}
