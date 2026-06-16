@@ -54,6 +54,38 @@ const ALL_LOCATIONS = [...new Set(
     .filter((v): v is string => !!v)
 )].sort();
 
+// Country codes for flag images
+const COUNTRY_FLAGS: Record<string, string> = {
+  'Argentina': 'ar', 'Australia': 'au', 'Austria': 'at', 'Algeria': 'dz',
+  'Belgium': 'be', 'Bosnia & Herzegovina': 'ba', 'Brazil': 'br',
+  'Cameroon': 'cm', 'Canada': 'ca', 'Cape Verde': 'cv', 'Chile': 'cl',
+  'Colombia': 'co', 'Costa Rica': 'cr', 'Croatia': 'hr', 'Czechia': 'cz',
+  'Denmark': 'dk', 'DR Congo': 'cd', 'Ecuador': 'ec', 'Egypt': 'eg',
+  'England': 'gb-eng', 'France': 'fr', 'Germany': 'de', 'Ghana': 'gh',
+  'Haiti': 'ht', 'Iceland': 'is', 'Iran': 'ir', 'Italy': 'it',
+  'Ivory Coast': 'ci', 'Jamaica': 'jm', 'Japan': 'jp', 'Mexico': 'mx',
+  'Morocco': 'ma', 'Netherlands': 'nl', 'New Zealand': 'nz', 'Nigeria': 'ng',
+  'Norway': 'no', 'Panama': 'pa', 'Paraguay': 'py', 'Peru': 'pe',
+  'Poland': 'pl', 'Portugal': 'pt', 'Qatar': 'qa', 'Saudi Arabia': 'sa',
+  'Scotland': 'gb-sct', 'Senegal': 'sn', 'Serbia': 'rs', 'Slovenia': 'si',
+  'South Africa': 'za', 'South Korea': 'kr', 'Spain': 'es', 'Sweden': 'se',
+  'Switzerland': 'ch', 'Tunisia': 'tn', 'Turkey': 'tr', 'Ukraine': 'ua',
+  'Uruguay': 'uy', 'USA': 'us', 'Uzbekistan': 'uz', 'Venezuela': 've', 'Wales': 'gb-wls',
+};
+
+function TeamFlag({ team, size = 24 }: { team: string; size?: number }) {
+  const code = COUNTRY_FLAGS[team] || 'un';
+  return (
+    <img
+      src={`https://flagcdn.com/w${size * 2}/${code}.png`}
+      alt={team}
+      title={team}
+      className="team-flag"
+      style={{ width: size, height: size * 0.67, objectFit: 'cover', borderRadius: 2 }}
+    />
+  );
+}
+
 interface Pick { m: MatchPrediction; md: ModelPrediction }
 
 interface SlotGroup {
@@ -1156,6 +1188,248 @@ export default function App() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {tab === 'bracket' && (
+          <div className="bracket-page">
+            <div className="bracket-controls">
+              <select 
+                className="filter-select" 
+                value={model} 
+                onChange={(e) => setModel(e.target.value)}
+              >
+                {MODELS.map((md) => (
+                  <option key={md.id} value={md.id}>{md.name}</option>
+                ))}
+              </select>
+              <button className="btn-refresh" onClick={refresh} disabled={loading}>
+                {loading ? 'Refreshing...' : '🔄 Refresh to Current'}
+              </button>
+              {lastFetchedAt && (
+                <span className="fetch-meta-inline">
+                  Updated {new Date(lastFetchedAt).toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+
+            {/* Tournament Stats */}
+            {(() => {
+              const allResults = [...byTeams.values()].filter(r => r.state === 'post');
+              let totalGoals = 0;
+              let matchCount = 0;
+              
+              for (const r of allResults) {
+                const [a, b] = r.score.split('–').map(s => parseInt(s, 10) || 0);
+                totalGoals += a + b;
+                matchCount++;
+              }
+              
+              const avgGoals = matchCount > 0 ? (totalGoals / matchCount).toFixed(2) : '0.00';
+              
+              return matchCount > 0 ? (
+                <div className="tournament-stats">
+                  <div className="stat-item">
+                    <span className="stat-value">{matchCount}</span>
+                    <span className="stat-label">Matches Played</span>
+                  </div>
+                  <div className="stat-item highlight">
+                    <span className="stat-value">⚽ {totalGoals}</span>
+                    <span className="stat-label">Total Goals</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-value">{avgGoals}</span>
+                    <span className="stat-label">Goals per Match</span>
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
+            {(() => {
+              const selectedModel = MODELS.find(m => m.id === model) || MODELS[0];
+              const knockoutMatches = selectedModel.matches.filter(m => m.stage !== 'group');
+              
+              const getMatchesByStage = (stage: string) => 
+                knockoutMatches.filter(m => m.stage === stage).sort((a, b) => a.slot - b.slot);
+              
+              const r32 = getMatchesByStage('r32');
+              const r16 = getMatchesByStage('r16');
+              const qf = getMatchesByStage('qf');
+              const sf = getMatchesByStage('sf');
+              const bronze = getMatchesByStage('bronze');
+              const final = getMatchesByStage('final');
+
+              // Group stage summary - who advances from each group
+              const groups = selectedModel.groups;
+
+              const BracketMatch = ({ match }: { match: MatchPrediction }) => {
+                // Only look up results for knockout matches if we have an ESPN ID
+                // This prevents group stage results from showing in knockout rounds
+                const espnId = espnIdFromMatchId(match.id);
+                const actual = espnId ? byId.get(espnId) : undefined;
+                const hasResult = actual?.state === 'post';
+                const actualWinner = hasResult ? actual.winner : null;
+                
+                return (
+                  <div className={`bracket-match ${hasResult ? 'completed' : 'predicted'}`}>
+                    <div className={`bracket-team ${hasResult && actualWinner === match.teamA ? 'actual-winner' : ''} ${hasResult && actualWinner !== match.teamA && actualWinner ? 'actual-loser' : ''} ${!hasResult && match.winner === match.teamA ? 'pred-winner' : ''}`}>
+                      <TeamFlag team={match.teamA} size={20} />
+                      <span className="team-name">{match.teamA}</span>
+                      {hasResult && <span className="team-score">{actual.score.split('–')[0]}</span>}
+                    </div>
+                    <div className={`bracket-team ${hasResult && actualWinner === match.teamB ? 'actual-winner' : ''} ${hasResult && actualWinner !== match.teamB && actualWinner ? 'actual-loser' : ''} ${!hasResult && match.winner === match.teamB ? 'pred-winner' : ''}`}>
+                      <TeamFlag team={match.teamB} size={20} />
+                      <span className="team-name">{match.teamB}</span>
+                      {hasResult && <span className="team-score">{actual.score.split('–')[1]}</span>}
+                    </div>
+                  </div>
+                );
+              };
+
+              const GroupCard = ({ group }: { group: typeof groups[0] }) => {
+                // Use live standings if available, otherwise fall back to predictions
+                const liveStandings = computeGroupStandings(group.letter, group.teams, byTeams);
+                const hasLiveData = liveStandings.some(s => s.played > 0);
+                
+                // Get teams in order (live or predicted)
+                const orderedTeams = hasLiveData 
+                  ? liveStandings.map(s => s.team)
+                  : group.teams;
+                
+                const thirdPlace = orderedTeams[2];
+                const isBestThird = selectedModel.bestThird.includes(thirdPlace);
+                
+                return (
+                  <div className={`bracket-group ${hasLiveData ? 'live-data' : ''}`}>
+                    <span className="group-letter">
+                      Group {group.letter}
+                      {hasLiveData && <span className="live-indicator">LIVE</span>}
+                    </span>
+                    <div className="group-teams">
+                      {orderedTeams.map((team, idx) => {
+                        const standing = hasLiveData ? liveStandings.find(s => s.team === team) : null;
+                        const advances = idx < 2 || (idx === 2 && isBestThird);
+                        return (
+                          <div key={team} className={`group-team-slot ${advances ? 'advances' : 'eliminated'}`}>
+                            <TeamFlag team={team} size={16} />
+                            <span className="team-name">{team}</span>
+                            {standing && <span className="pts-badge">{standing.pts}pts</span>}
+                            {idx < 2 && <span className="pos-badge">{idx + 1}</span>}
+                            {idx === 2 && isBestThird && <span className="pos-badge third">3rd</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              };
+
+              // Split groups into top bracket (A-F) and bottom bracket (G-L)
+              const topGroups = groups.filter(g => ['A', 'B', 'C', 'D', 'E', 'F'].includes(g.letter));
+              const bottomGroups = groups.filter(g => ['G', 'H', 'I', 'J', 'K', 'L'].includes(g.letter));
+              
+              // Split R32 matches (first 8 = top bracket, last 8 = bottom bracket)
+              const r32Top = r32.slice(0, 8);
+              const r32Bottom = r32.slice(8, 16);
+              
+              // Split R16 matches
+              const r16Top = r16.slice(0, 4);
+              const r16Bottom = r16.slice(4, 8);
+              
+              // Split QF matches
+              const qfTop = qf.slice(0, 2);
+              const qfBottom = qf.slice(2, 4);
+
+              return (
+                <div className="bracket-wrapper">
+                  {/* Top Half Bracket */}
+                  <div className="bracket-half top-half">
+                    <div className="bracket-container">
+                      <div className="bracket-round groups-col">
+                        <h4 className="round-title">Groups A-F</h4>
+                        <div className="groups-list">
+                          {topGroups.map((g) => <GroupCard key={g.letter} group={g} />)}
+                        </div>
+                      </div>
+
+                      <div className="bracket-round r32-col">
+                        <h4 className="round-title">R32</h4>
+                        {r32Top.map((m) => <BracketMatch key={m.id} match={m} />)}
+                      </div>
+                      
+                      <div className="bracket-round r16-col">
+                        <h4 className="round-title">R16</h4>
+                        {r16Top.map((m) => <BracketMatch key={m.id} match={m} />)}
+                      </div>
+                      
+                      <div className="bracket-round qf-col">
+                        <h4 className="round-title">QF</h4>
+                        {qfTop.map((m) => <BracketMatch key={m.id} match={m} />)}
+                      </div>
+                      
+                      <div className="bracket-round sf-col">
+                        <h4 className="round-title">SF</h4>
+                        {sf.slice(0, 1).map((m) => <BracketMatch key={m.id} match={m} />)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Final Section */}
+                  <div className="bracket-final-section">
+                    <div className="champion-display">
+                      <span className="champion-label">🏆 Champion</span>
+                      <div className="champion-team">
+                        <TeamFlag team={selectedModel.champion} size={40} />
+                        <span>{selectedModel.champion}</span>
+                      </div>
+                      <span className="final-score">{selectedModel.finalScore}</span>
+                    </div>
+                    
+                    <div className="final-match">
+                      <h4 className="round-title">Final</h4>
+                      {final.map((m) => <BracketMatch key={m.id} match={m} />)}
+                    </div>
+                    
+                    <div className="bronze-match">
+                      <h4 className="round-title">3rd Place</h4>
+                      {bronze.map((m) => <BracketMatch key={m.id} match={m} />)}
+                    </div>
+                  </div>
+
+                  {/* Bottom Half Bracket */}
+                  <div className="bracket-half bottom-half">
+                    <div className="bracket-container">
+                      <div className="bracket-round groups-col">
+                        <h4 className="round-title">Groups G-L</h4>
+                        <div className="groups-list">
+                          {bottomGroups.map((g) => <GroupCard key={g.letter} group={g} />)}
+                        </div>
+                      </div>
+
+                      <div className="bracket-round r32-col">
+                        <h4 className="round-title">R32</h4>
+                        {r32Bottom.map((m) => <BracketMatch key={m.id} match={m} />)}
+                      </div>
+                      
+                      <div className="bracket-round r16-col">
+                        <h4 className="round-title">R16</h4>
+                        {r16Bottom.map((m) => <BracketMatch key={m.id} match={m} />)}
+                      </div>
+                      
+                      <div className="bracket-round qf-col">
+                        <h4 className="round-title">QF</h4>
+                        {qfBottom.map((m) => <BracketMatch key={m.id} match={m} />)}
+                      </div>
+                      
+                      <div className="bracket-round sf-col">
+                        <h4 className="round-title">SF</h4>
+                        {sf.slice(1, 2).map((m) => <BracketMatch key={m.id} match={m} />)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
