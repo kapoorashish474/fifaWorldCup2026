@@ -1387,6 +1387,25 @@ details[open] .accuracy-summary::before {
 .match-card.timing-live {
   border-color: #fecaca;
   box-shadow: 0 0 0 1px #fecaca;
+  background: #fff5f5;
+}
+
+.match-card.timing-finished {
+  background: linear-gradient(to right, #f0fdf4, #fff);
+  border-color: #bbf7d0;
+}
+
+.match-card.timing-finished .match-header {
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.match-card.timing-upcoming {
+  background: #fff;
+  opacity: 0.85;
+}
+
+.match-card.timing-upcoming:hover {
+  opacity: 1;
 }
 
 .empty-small {

@@ -565,26 +565,27 @@ export default function App() {
     );
   }, [model, stage, date, team, location]);
 
-  // Get unique scores from completed matches for filter dropdown
-  const uniqueScores = useMemo(() => {
-    const scores = new Set<string>();
+  // Get unique scores from completed matches for filter dropdown with counts
+  const scoreData = useMemo(() => {
+    const scoreCounts = new Map<string, number>();
     for (const g of fixtures) {
       const actual = lookupResult(g.espnId, g.teamA, g.teamB, byId, byTeams);
       if (actual?.state === 'post' && actual.score) {
-        // Normalize score to show higher score first (e.g., "2–1" not "1–2")
         const [a, b] = actual.score.split('–').map(s => parseInt(s, 10) || 0);
         const normalized = a >= b ? `${a}–${b}` : `${b}–${a}`;
-        scores.add(normalized);
+        scoreCounts.set(normalized, (scoreCounts.get(normalized) || 0) + 1);
       }
     }
-    return [...scores].sort((x, y) => {
-      const [xa, xb] = x.split('–').map(Number);
-      const [ya, yb] = y.split('–').map(Number);
-      const xTotal = xa + xb;
-      const yTotal = ya + yb;
-      if (xTotal !== yTotal) return yTotal - xTotal; // Higher scoring first
-      return yb - ya - (xb - xa); // Then by margin
-    });
+    return [...scoreCounts.entries()]
+      .map(([score, count]) => ({ score, count }))
+      .sort((x, y) => {
+        const [xa, xb] = x.score.split('–').map(Number);
+        const [ya, yb] = y.score.split('–').map(Number);
+        const xTotal = xa + xb;
+        const yTotal = ya + yb;
+        if (xTotal !== yTotal) return yTotal - xTotal;
+        return yb - ya - (xb - xa);
+      });
   }, [fixtures, byId, byTeams]);
 
   // Apply score and factor filters
@@ -702,7 +703,21 @@ export default function App() {
                 </select>
                 <select id="date-filter" className="filter-select" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date">
                   <option value="">All dates</option>
-                  {ALL_DATES.map((d) => <option key={d} value={d}>{fmtDateOption(d)}</option>)}
+                  {ALL_DATES.map((d) => {
+                    const today = new Date().toISOString().split('T')[0];
+                    const isPast = d < today;
+                    const isToday = d === today;
+                    return (
+                      <option 
+                        key={d} 
+                        value={d} 
+                        className={isPast ? 'date-past' : isToday ? 'date-today' : 'date-future'}
+                        style={{ color: isPast ? '#22c55e' : isToday ? '#f59e0b' : '#6b7280' }}
+                      >
+                        {isPast ? '✓ ' : isToday ? '● ' : ''}{fmtDateOption(d)}
+                      </option>
+                    );
+                  })}
                 </select>
                 <select id="location-filter" className="filter-select" value={location} onChange={(e) => setLocation(e.target.value)} aria-label="Location">
                   <option value="all">All locations</option>
@@ -710,7 +725,11 @@ export default function App() {
                 </select>
                 <select id="score-filter" className="filter-select" value={scoreFilter} onChange={(e) => setScoreFilter(e.target.value)} aria-label="Score">
                   <option value="all">All scores</option>
-                  {uniqueScores.map((sc) => <option key={sc} value={sc}>{sc}</option>)}
+                  {scoreData.map(({ score, count }) => (
+                    <option key={score} value={score} style={{ color: score.includes('–0') ? '#22c55e' : '#6b7280' }}>
+                      {score} ({count})
+                    </option>
+                  ))}
                 </select>
               </>
             )}
