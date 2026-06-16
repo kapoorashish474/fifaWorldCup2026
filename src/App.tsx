@@ -501,6 +501,7 @@ export default function App() {
   const [date, setDate] = useState('');
   const [team, setTeam] = useState('');
   const [location, setLocation] = useState('all');
+  const [scoreFilter, setScoreFilter] = useState('all');
   const [factorFilter, setFactorFilter] = useState<'all' | 'worked' | 'failed' | string>('all');
   const now = useNow();
   const { byId, byTeams, loading, error, lastFetchedAt, fetchMs, refresh, hasData } = useEspnResults();
@@ -564,36 +565,76 @@ export default function App() {
     );
   }, [model, stage, date, team, location]);
 
-  // Apply factor filter
-  const filteredFixtures = useMemo(() => {
-    if (factorFilter === 'all') return fixtures;
-    
-    return fixtures.filter((g) => {
-      if (g.stage !== 'group') return factorFilter === 'all';
-      
+  // Get unique scores from completed matches for filter dropdown
+  const uniqueScores = useMemo(() => {
+    const scores = new Set<string>();
+    for (const g of fixtures) {
       const actual = lookupResult(g.espnId, g.teamA, g.teamB, byId, byTeams);
-      if (!actual || actual.state !== 'post') return false;
-      
-      const aiPred = getPrediction(g.teamA, g.teamB);
-      const factorsWorked = aiPred.factors.filter(f => {
-        if (f.score === 0) return false;
-        const factorPredictedWinner = f.score > 0 ? g.teamA : g.teamB;
-        return factorPredictedWinner === actual.winner;
-      }).map(f => f.name);
-      
-      const factorsFailed = aiPred.factors.filter(f => {
-        if (f.score === 0) return false;
-        const factorPredictedWinner = f.score > 0 ? g.teamA : g.teamB;
-        return factorPredictedWinner !== actual.winner;
-      }).map(f => f.name);
-      
-      if (factorFilter === 'worked') return factorsWorked.length > 0;
-      if (factorFilter === 'failed') return factorsFailed.length > 0;
-      
-      // Filter by specific factor
-      return factorsWorked.includes(factorFilter);
+      if (actual?.state === 'post' && actual.score) {
+        // Normalize score to show higher score first (e.g., "2–1" not "1–2")
+        const [a, b] = actual.score.split('–').map(s => parseInt(s, 10) || 0);
+        const normalized = a >= b ? `${a}–${b}` : `${b}–${a}`;
+        scores.add(normalized);
+      }
+    }
+    return [...scores].sort((x, y) => {
+      const [xa, xb] = x.split('–').map(Number);
+      const [ya, yb] = y.split('–').map(Number);
+      const xTotal = xa + xb;
+      const yTotal = ya + yb;
+      if (xTotal !== yTotal) return yTotal - xTotal; // Higher scoring first
+      return yb - ya - (xb - xa); // Then by margin
     });
-  }, [fixtures, factorFilter, byId, byTeams, getPrediction]);
+  }, [fixtures, byId, byTeams]);
+
+  // Apply score and factor filters
+  const filteredFixtures = useMemo(() => {
+    let result = fixtures;
+    
+    // Apply score filter
+    if (scoreFilter !== 'all') {
+      result = result.filter((g) => {
+        const actual = lookupResult(g.espnId, g.teamA, g.teamB, byId, byTeams);
+        if (!actual || actual.state !== 'post') return false;
+        
+        // Normalize the actual score for comparison
+        const [a, b] = actual.score.split('–').map(s => parseInt(s, 10) || 0);
+        const normalized = a >= b ? `${a}–${b}` : `${b}–${a}`;
+        
+        return normalized === scoreFilter;
+      });
+    }
+    
+    // Apply factor filter
+    if (factorFilter !== 'all') {
+      result = result.filter((g) => {
+        if (g.stage !== 'group') return factorFilter === 'all';
+        
+        const actual = lookupResult(g.espnId, g.teamA, g.teamB, byId, byTeams);
+        if (!actual || actual.state !== 'post') return false;
+        
+        const aiPred = getPrediction(g.teamA, g.teamB);
+        const factorsWorked = aiPred.factors.filter(f => {
+          if (f.score === 0) return false;
+          const factorPredictedWinner = f.score > 0 ? g.teamA : g.teamB;
+          return factorPredictedWinner === actual.winner;
+        }).map(f => f.name);
+        
+        const factorsFailed = aiPred.factors.filter(f => {
+          if (f.score === 0) return false;
+          const factorPredictedWinner = f.score > 0 ? g.teamA : g.teamB;
+          return factorPredictedWinner !== actual.winner;
+        }).map(f => f.name);
+        
+        if (factorFilter === 'worked') return factorsWorked.length > 0;
+        if (factorFilter === 'failed') return factorsFailed.length > 0;
+        
+        return factorsWorked.includes(factorFilter);
+      });
+    }
+    
+    return result;
+  }, [fixtures, scoreFilter, factorFilter, byId, byTeams, getPrediction]);
 
   const groupCount = filteredFixtures.filter((f) => f.stage === 'group').length;
   const knockoutCount = filteredFixtures.filter((f) => f.stage !== 'group').length;
@@ -667,6 +708,10 @@ export default function App() {
                   <option value="all">All locations</option>
                   {ALL_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
                 </select>
+                <select id="score-filter" className="filter-select" value={scoreFilter} onChange={(e) => setScoreFilter(e.target.value)} aria-label="Score">
+                  <option value="all">All scores</option>
+                  {uniqueScores.map((sc) => <option key={sc} value={sc}>{sc}</option>)}
+                </select>
               </>
             )}
             <select id="team-filter" className="filter-select filter-select-team" value={team} onChange={(e) => setTeam(e.target.value)} aria-label="Team">
@@ -687,7 +732,7 @@ export default function App() {
                 </optgroup>
               </select>
             )}
-            {(date || team || location !== 'all' || stage !== 'all' || model !== 'all' || factorFilter !== 'all') && (
+            {(date || team || location !== 'all' || stage !== 'all' || model !== 'all' || scoreFilter !== 'all' || factorFilter !== 'all') && (
               <button
                 type="button"
                 className="filter-clear"
@@ -697,6 +742,7 @@ export default function App() {
                   setDate('');
                   setTeam('');
                   setLocation('all');
+                  setScoreFilter('all');
                   setFactorFilter('all');
                 }}
               >
