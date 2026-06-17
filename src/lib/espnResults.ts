@@ -20,6 +20,13 @@ const TEAM_ALIASES: Record<string, string> = {
 
 export type EspnState = 'pre' | 'in' | 'post';
 
+export interface GoalEvent {
+  minute: string;
+  player: string;
+  team: string;
+  type?: string; // 'goal', 'penalty', 'own-goal'
+}
+
 export interface EspnResult {
   id: string;
   state: EspnState;
@@ -29,6 +36,7 @@ export interface EspnResult {
   winner?: string;
   clock?: string;
   venue?: string;
+  goals?: GoalEvent[];
 }
 
 export function normalizeTeam(name: string): string {
@@ -40,14 +48,30 @@ export function teamsKey(teamA: string, teamB: string): string {
   return [teamA, teamB].sort().join('|');
 }
 
-function parseEvent(event: {
+interface EspnEventData {
   id: string;
   competitions?: {
     status?: { type?: { state?: string; completed?: boolean }; displayClock?: string };
     venue?: { fullName?: string; address?: { city?: string; country?: string } };
-    competitors?: { homeAway: string; winner?: boolean; score: string; team: { displayName: string } }[];
+    competitors?: { 
+      homeAway: string; 
+      winner?: boolean; 
+      score: string; 
+      team: { displayName: string; id?: string } 
+    }[];
+    details?: {
+      clock?: { displayValue?: string };
+      type?: { text?: string };
+      athletesInvolved?: { displayName?: string }[];
+      team?: { id?: string };
+      scoringPlay?: boolean;
+      penaltyKick?: boolean;
+      ownGoal?: boolean;
+    }[];
   }[];
-}): EspnResult | null {
+}
+
+function parseEvent(event: EspnEventData): EspnResult | null {
   const comp = event.competitions?.[0];
   if (!comp?.competitors || comp.competitors.length < 2) return null;
 
@@ -55,6 +79,8 @@ function parseEvent(event: {
   const away = comp.competitors.find((c) => c.homeAway === 'away') ?? comp.competitors[1];
   const teamA = normalizeTeam(home.team.displayName);
   const teamB = normalizeTeam(away.team.displayName);
+  const homeTeamId = home.team.id;
+  const awayTeamId = away.team.id;
   const scoreA = parseInt(home.score, 10) || 0;
   const scoreB = parseInt(away.score, 10) || 0;
   const completed = comp.status?.type?.completed ?? false;
@@ -70,6 +96,22 @@ function parseEvent(event: {
       ? `${city}${country ? `, ${country}` : ''}`
       : v?.fullName;
 
+  // Parse goal events from details
+  const goals: GoalEvent[] = [];
+  if (comp.details) {
+    for (const detail of comp.details) {
+      if (detail.scoringPlay && detail.athletesInvolved?.[0]) {
+        const playerName = detail.athletesInvolved[0].displayName ?? 'Unknown';
+        const minute = detail.clock?.displayValue ?? '';
+        const teamId = detail.team?.id;
+        const team = teamId === homeTeamId ? teamA : teamId === awayTeamId ? teamB : '';
+        const type = detail.penaltyKick ? 'penalty' : detail.ownGoal ? 'own-goal' : 'goal';
+        
+        goals.push({ minute, player: playerName, team, type });
+      }
+    }
+  }
+
   return {
     id: event.id,
     state: espnState,
@@ -79,6 +121,7 @@ function parseEvent(event: {
     winner,
     clock: comp.status?.displayClock,
     venue,
+    goals: goals.length > 0 ? goals : undefined,
   };
 }
 

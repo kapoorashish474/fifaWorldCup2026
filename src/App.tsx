@@ -271,6 +271,36 @@ function SlotCard({
         </div>
       )}
       
+      {actual?.goals && actual.goals.length > 0 && (
+        <div className="goals-timeline">
+          <div className="goals-col team-a-goals">
+            {actual.goals
+              .filter(g => g.team === group.teamA)
+              .map((g, i) => (
+                <div key={i} className={`goal-event ${g.type || 'goal'}`}>
+                  <span className="goal-minute">{g.minute}'</span>
+                  <span className="goal-player">{g.player}</span>
+                  {g.type === 'penalty' && <span className="goal-type">P</span>}
+                  {g.type === 'own-goal' && <span className="goal-type">OG</span>}
+                </div>
+              ))}
+          </div>
+          <div className="goals-divider">⚽</div>
+          <div className="goals-col team-b-goals">
+            {actual.goals
+              .filter(g => g.team === group.teamB)
+              .map((g, i) => (
+                <div key={i} className={`goal-event ${g.type || 'goal'}`}>
+                  <span className="goal-minute">{g.minute}'</span>
+                  <span className="goal-player">{g.player}</span>
+                  {g.type === 'penalty' && <span className="goal-type">P</span>}
+                  {g.type === 'own-goal' && <span className="goal-type">OG</span>}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+      
       {keyFactors.length > 0 && (
         <div className="factors-breakdown">
           {keyFactors.slice(0, 6).map((f) => {
@@ -535,6 +565,7 @@ export default function App() {
   const [location, setLocation] = useState('all');
   const [scoreFilter, setScoreFilter] = useState('all');
   const [factorFilter, setFactorFilter] = useState<'all' | 'worked' | 'failed' | string>('all');
+  const [collapsedDates, setCollapsedDates] = useState<Set<string>>(new Set());
   const now = useNow();
   const { byId, byTeams, loading, error, lastFetchedAt, fetchMs, refresh, hasData } = useEspnResults();
   const { bets, summary, error: betsError, addBet, settleBet, deleteBet } = useBets();
@@ -805,33 +836,106 @@ export default function App() {
       </header>
 
       <main>
-        {tab === 'schedule' && (
-          <>
-            {scoredCount > 0 && <AccuracyBoard scores={accuracy} />}
-            <p className="meta">
-              {groupCount} group · {knockoutCount} knockout
-              {liveCount > 0 && ` · ${liveCount} live`}
-              {scoredCount > 0 && ` · ${scoredCount} with results`}
-            </p>
-            <ul className="list">
-              {filteredFixtures.map((g) => {
-                const actual = lookup(g);
-                const aiPred = getPrediction(g.teamA, g.teamB);
-                return (
-                  <SlotCard
-                    key={g.key}
-                    group={g}
-                    timing={getTiming(g)}
-                    now={now}
-                    actual={actual}
-                    aiPrediction={aiPred}
-                  />
-                );
-              })}
-            </ul>
-            {!filteredFixtures.length && <p className="empty">No matches — adjust filters</p>}
-          </>
-        )}
+        {tab === 'schedule' && (() => {
+          // Group fixtures by date
+          const fixturesByDate = filteredFixtures.reduce((acc, g) => {
+            const matchDate = g.kickoff.split('T')[0];
+            if (!acc[matchDate]) acc[matchDate] = [];
+            acc[matchDate].push(g);
+            return acc;
+          }, {} as Record<string, typeof filteredFixtures>);
+          
+          const sortedDates = Object.keys(fixturesByDate).sort();
+          const today = new Date().toISOString().split('T')[0];
+          
+          const toggleDate = (d: string) => {
+            setCollapsedDates(prev => {
+              const next = new Set(prev);
+              if (next.has(d)) next.delete(d);
+              else next.add(d);
+              return next;
+            });
+          };
+          
+          const collapseAll = () => setCollapsedDates(new Set(sortedDates));
+          const expandAll = () => setCollapsedDates(new Set());
+          
+          return (
+            <>
+              {scoredCount > 0 && <AccuracyBoard scores={accuracy} />}
+              <div className="schedule-header">
+                <p className="meta">
+                  {groupCount} group · {knockoutCount} knockout
+                  {liveCount > 0 && ` · ${liveCount} live`}
+                  {scoredCount > 0 && ` · ✓ ${scoredCount} completed`}
+                  {` · ${groupCount + knockoutCount - scoredCount} remaining`}
+                </p>
+                <div className="collapse-controls">
+                  <button type="button" className="collapse-btn" onClick={expandAll}>Expand All</button>
+                  <button type="button" className="collapse-btn" onClick={collapseAll}>Collapse All</button>
+                </div>
+              </div>
+              
+              <div className="schedule-dates">
+                {sortedDates.map((d) => {
+                  const matches = fixturesByDate[d];
+                  const isCollapsed = collapsedDates.has(d);
+                  const isPast = d < today;
+                  const isToday = d === today;
+                  const completedInDate = matches.filter(g => lookup(g)?.state === 'post').length;
+                  const liveInDate = matches.filter(g => lookup(g)?.state === 'in').length;
+                  
+                  return (
+                    <div key={d} className={`date-group ${isPast ? 'past' : isToday ? 'today' : 'future'} ${isCollapsed ? 'collapsed' : ''}`}>
+                      <button
+                        type="button"
+                        className="date-header"
+                        onClick={() => toggleDate(d)}
+                        aria-expanded={!isCollapsed}
+                      >
+                        <span className="date-chevron">{isCollapsed ? '▶' : '▼'}</span>
+                        <span className="date-label">
+                          {new Date(d + 'T12:00:00').toLocaleDateString('en-US', { 
+                            weekday: 'long', 
+                            month: 'long', 
+                            day: 'numeric' 
+                          })}
+                        </span>
+                        <span className="date-stats">
+                          {matches.length} match{matches.length !== 1 ? 'es' : ''}
+                          {completedInDate > 0 && <span className="stat-done"> · ✓ {completedInDate}</span>}
+                          {liveInDate > 0 && <span className="stat-live"> · 🔴 {liveInDate}</span>}
+                        </span>
+                        {isToday && <span className="today-badge">TODAY</span>}
+                      </button>
+                      
+                      {!isCollapsed && (
+                        <ul className="date-matches">
+                          {matches.map((g) => {
+                            const actual = lookup(g);
+                            const aiPred = getPrediction(g.teamA, g.teamB);
+                            return (
+                              <SlotCard
+                                key={g.key}
+                                group={g}
+                                timing={getTiming(g)}
+                                now={now}
+                                actual={actual}
+                                aiPrediction={aiPred}
+                              />
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {!filteredFixtures.length && <p className="empty">No matches — adjust filters</p>}
+            </>
+          );
+        })()}
 
         {tab === 'accuracy' && (
           <>
@@ -1227,22 +1331,35 @@ export default function App() {
               
               const avgGoals = matchCount > 0 ? (totalGoals / matchCount).toFixed(2) : '0.00';
               
-              return matchCount > 0 ? (
+              // Total matches in World Cup 2026: 72 group + 32 knockout = 104
+              const TOTAL_MATCHES = 104;
+              const remainingMatches = TOTAL_MATCHES - matchCount;
+              const predictedTotalGoals = matchCount > 0 
+                ? Math.round(totalGoals + (parseFloat(avgGoals) * remainingMatches))
+                : 0;
+              
+              return (
                 <div className="tournament-stats">
                   <div className="stat-item">
-                    <span className="stat-value">{matchCount}</span>
+                    <span className="stat-value">{matchCount}/{TOTAL_MATCHES}</span>
                     <span className="stat-label">Matches Played</span>
                   </div>
                   <div className="stat-item highlight">
                     <span className="stat-value">⚽ {totalGoals}</span>
-                    <span className="stat-label">Total Goals</span>
+                    <span className="stat-label">Goals So Far</span>
                   </div>
                   <div className="stat-item">
                     <span className="stat-value">{avgGoals}</span>
-                    <span className="stat-label">Goals per Match</span>
+                    <span className="stat-label">Per Match</span>
                   </div>
+                  {matchCount > 0 && (
+                    <div className="stat-item predicted">
+                      <span className="stat-value">🎯 ~{predictedTotalGoals}</span>
+                      <span className="stat-label">Predicted Total</span>
+                    </div>
+                  )}
                 </div>
-              ) : null;
+              );
             })()}
 
             {(() => {

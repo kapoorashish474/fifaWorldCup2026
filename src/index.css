@@ -175,6 +175,172 @@ header h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
 main { padding: 16px 20px 32px; }
 .meta { font-size: 12px; color: #666; margin-bottom: 12px; }
 
+/* Schedule Header with Collapse Controls */
+.schedule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.schedule-header .meta {
+  margin-bottom: 0;
+}
+
+.collapse-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.collapse-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.collapse-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+/* Date Groups */
+.schedule-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.date-group {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.date-group.past {
+  border-left: 4px solid #22c55e;
+}
+
+.date-group.today {
+  border-left: 4px solid #f59e0b;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+}
+
+.date-group.future {
+  border-left: 4px solid #6366f1;
+}
+
+.date-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  background: linear-gradient(to right, #f9fafb, #fff);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.date-header:hover {
+  background: linear-gradient(to right, #f3f4f6, #fafafa);
+}
+
+.date-group.past .date-header {
+  background: linear-gradient(to right, #f0fdf4, #fff);
+}
+
+.date-group.today .date-header {
+  background: linear-gradient(to right, #fffbeb, #fff);
+}
+
+.date-group.future .date-header {
+  background: linear-gradient(to right, #eef2ff, #fff);
+}
+
+.date-chevron {
+  font-size: 10px;
+  color: #9ca3af;
+  width: 14px;
+  transition: transform 0.2s;
+}
+
+.date-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  flex: 1;
+}
+
+.date-group.past .date-label {
+  color: #166534;
+}
+
+.date-group.today .date-label {
+  color: #b45309;
+}
+
+.date-group.future .date-label {
+  color: #4338ca;
+}
+
+.date-stats {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.date-stats .stat-done {
+  color: #16a34a;
+}
+
+.date-stats .stat-live {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.today-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Matches inside date group */
+.date-matches {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+  padding: 12px 16px 16px;
+  background: #fafafa;
+  border-top: 1px solid #f3f4f6;
+}
+
+.date-group.collapsed .date-matches {
+  display: none;
+}
+
+/* Adjust match cards inside date groups */
+.date-matches .match-card {
+  margin: 0;
+}
+
 .w { color: #15803d; font-weight: 600; }
 .l { color: #b91c1c; text-decoration: line-through; opacity: .85; font-weight: 500; }
 
@@ -329,6 +495,96 @@ main { padding: 16px 20px 32px; }
   background: #fef3c7;
   padding: 2px 8px;
   border-radius: 999px;
+}
+
+/* Goals Timeline */
+.goals-timeline {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #fefce8 0%, #fff 50%, #ecfdf5 100%);
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 12px;
+}
+
+.goals-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.team-a-goals {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.team-b-goals {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.goals-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #9ca3af;
+  padding: 0 4px;
+}
+
+.goal-event {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  border: 1px solid #e5e7eb;
+}
+
+.team-a-goals .goal-event {
+  flex-direction: row-reverse;
+}
+
+.goal-minute {
+  font-weight: 700;
+  color: #059669;
+  font-size: 11px;
+  min-width: 24px;
+}
+
+.goal-player {
+  color: #374151;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.goal-type {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.goal-event.penalty .goal-type {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.goal-event.own-goal .goal-type {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.goal-event.own-goal {
+  border-color: #fecaca;
+  background: #fef2f2;
 }
 
 .accuracy-panel { margin-bottom: 12px; }
@@ -1736,6 +1992,12 @@ details[open] .accuracy-summary::before {
   border: 2px solid #f59e0b;
 }
 
+.stat-item.predicted {
+  background: #ede9fe;
+  border-radius: 8px;
+  border: 2px solid #8b5cf6;
+}
+
 .stat-value {
   font-size: 24px;
   font-weight: 700;
@@ -1744,6 +2006,10 @@ details[open] .accuracy-summary::before {
 
 .stat-item.highlight .stat-value {
   color: #b45309;
+}
+
+.stat-item.predicted .stat-value {
+  color: #6d28d9;
 }
 
 .stat-label {
