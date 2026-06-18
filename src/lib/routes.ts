@@ -1,4 +1,4 @@
-export type TabKey = 'schedule' | 'accuracy' | 'groups' | 'winners' | 'bets' | 'stats' | 'bracket';
+export type TabKey = 'schedule' | 'accuracy' | 'groups' | 'winners' | 'bets' | 'stats' | 'pattern' | 'bracket';
 
 export const TAB_PATHS: Record<TabKey, string> = {
   schedule: '/Schedule',
@@ -7,6 +7,7 @@ export const TAB_PATHS: Record<TabKey, string> = {
   winners: '/Winners',
   bets: '/Bets',
   stats: '/Stats',
+  pattern: '/Pattern',
   bracket: '/Bracket',
 };
 
@@ -17,10 +18,11 @@ export const TAB_LABELS: Record<TabKey, string> = {
   winners: 'Winners',
   bets: 'My Bets',
   stats: 'Stats',
+  pattern: 'Pattern',
   bracket: 'Bracket',
 };
 
-export const NAV_TABS: TabKey[] = ['schedule', 'accuracy', 'groups', 'winners', 'bets', 'stats', 'bracket'];
+export const NAV_TABS: TabKey[] = ['schedule', 'accuracy', 'groups', 'winners', 'bets', 'stats', 'pattern', 'bracket'];
 
 const PATH_TO_TAB = new Map(
   Object.entries(TAB_PATHS).map(([tab, path]) => [path.toLowerCase(), tab as TabKey]),

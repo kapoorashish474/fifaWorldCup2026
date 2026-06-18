@@ -39,6 +39,7 @@ import type { MatchDynamicFactors } from './lib/dynamicFactors';
 import { useLearning } from './lib/useLearning';
 import { FIFA_RANKINGS, WORLD_CUP_TITLES, RECENT_FORM } from './lib/predictionEngine';
 import { Dropdown, type DropdownOption } from './components/Dropdown';
+import { analyzePatterns, FAMOUS_RIVALRIES, getTimeSlot, type PatternBucket, type TimeSlot } from './lib/patternAnalysis';
 
 // Classic rivalries
 const RIVALRIES: Record<string, string> = {
@@ -85,6 +86,52 @@ function TeamFlag({ team, size = 24 }: { team: string; size?: number }) {
       className="team-flag"
       style={{ width: size, height: size * 0.67, objectFit: 'cover', borderRadius: 2 }}
     />
+  );
+}
+
+function PatternBucketGrid({
+  buckets,
+  baseline,
+  compact = false,
+}: {
+  buckets: PatternBucket[];
+  baseline: number;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`pattern-buckets ${compact ? 'compact' : ''}`}>
+      {buckets.map((b) => (
+        <div key={b.key} className={`pattern-bucket trend-${b.trend}`}>
+          <div className="pattern-bucket-head">
+            <span className="pattern-bucket-label">{b.label}</span>
+            <span className={`pattern-trend-badge ${b.trend}`}>
+              {b.trend === 'high' ? '↑ High' : b.trend === 'low' ? '↓ Low' : '≈ Avg'}
+            </span>
+          </div>
+          {!compact && <p className="pattern-bucket-desc">{b.description}</p>}
+          <div className="pattern-bucket-stats">
+            <span className="pattern-avg">{b.matches > 0 ? b.avgGoals : '—'}</span>
+            <span className="pattern-avg-label">goals / match</span>
+          </div>
+          <div className="pattern-bucket-foot">
+            <span>{b.matches} match{b.matches !== 1 ? 'es' : ''}</span>
+            {b.matches > 0 && baseline > 0 && (
+              <span className={b.deltaFromAvg >= 0 ? 'delta-pos' : 'delta-neg'}>
+                {b.deltaFromAvg >= 0 ? '+' : ''}{b.deltaFromAvg} vs avg
+              </span>
+            )}
+          </div>
+          {b.matches > 0 && baseline > 0 && (
+            <div className="pattern-bar-track">
+              <div
+                className="pattern-bar-fill"
+                style={{ width: `${Math.min(100, (b.avgGoals / (baseline * 2)) * 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -598,6 +645,7 @@ export default function App() {
   const [date, setDate] = useState('');
   const [team, setTeam] = useState('');
   const [location, setLocation] = useState('all');
+  const [timeFilter, setTimeFilter] = useState<'all' | TimeSlot>('all');
   const [scoreFilter, setScoreFilter] = useState('all');
   const [factorFilter, setFactorFilter] = useState<'all' | 'worked' | 'failed' | string>('all');
   const [collapsedDates, setCollapsedDates] = useState<Set<string>>(() => new Set(ALL_DATES));
@@ -649,6 +697,7 @@ export default function App() {
         if (date && localDateKey(m.kickoff) !== date) continue;
         if (team && m.teamA !== team && m.teamB !== team) continue;
         if (location !== 'all' && m.venue && !m.venue.toLowerCase().includes(location.toLowerCase())) continue;
+        if (timeFilter !== 'all' && getTimeSlot(m.kickoff) !== timeFilter) continue;
 
         const key = model === 'all' ? slotKey(m) : `${slotKey(m)}|${m.teamA}|${m.teamB}`;
         if (!map.has(key)) {
@@ -677,7 +726,7 @@ export default function App() {
     return [...map.values()].sort(
       (a, b) => a.kickoff.localeCompare(b.kickoff) || a.slot - b.slot,
     );
-  }, [model, stage, date, team, location]);
+  }, [model, stage, date, team, location, timeFilter]);
 
   // Get unique scores from completed matches for filter dropdown with counts
   const scoreData = useMemo(() => {
@@ -752,6 +801,11 @@ export default function App() {
   }, [fixtures, scoreFilter, factorFilter, byId, byTeams, getPrediction]);
 
   const scoredCount = accuracy.reduce((s, a) => s + a.total, 0);
+
+  const patternAnalysis = useMemo(
+    () => analyzePatterns(byId, byTeams),
+    [byId, byTeams],
+  );
 
   return (
     <div className="page">
@@ -841,6 +895,14 @@ export default function App() {
             })),
           ];
 
+          const timeOptions: DropdownOption[] = [
+            { value: 'all', label: 'All times', icon: '🕐' },
+            { value: 'early', label: 'Early · before 2 PM ET', icon: '🌅' },
+            { value: 'afternoon', label: 'Afternoon · 2–6 PM ET', icon: '☀️' },
+            { value: 'primetime', label: 'Primetime · 6–10 PM ET', icon: '📺' },
+            { value: 'late', label: 'Late night · 10 PM+ ET', icon: '🌙' },
+          ];
+
           const scoreOptions: DropdownOption[] = [
             { value: 'all', label: 'All scores', icon: '⚽' },
             ...scoreData.map(({ score, count }) => ({
@@ -902,6 +964,13 @@ export default function App() {
                     placeholder="Location"
                   />
                   <Dropdown
+                    value={timeFilter}
+                    options={timeOptions}
+                    onChange={(v) => setTimeFilter(v as 'all' | TimeSlot)}
+                    placeholder="Kickoff time"
+                    className="dropdown-time"
+                  />
+                  <Dropdown
                     value={scoreFilter}
                     options={scoreOptions}
                     onChange={setScoreFilter}
@@ -925,7 +994,7 @@ export default function App() {
                   placeholder="Factor"
                 />
               )}
-              {(date || team || location !== 'all' || stage !== 'all' || model !== 'all' || scoreFilter !== 'all' || factorFilter !== 'all') && (
+              {(date || team || location !== 'all' || timeFilter !== 'all' || stage !== 'all' || model !== 'all' || scoreFilter !== 'all' || factorFilter !== 'all') && (
                 <button
                   type="button"
                   className="filter-clear"
@@ -935,6 +1004,7 @@ export default function App() {
                     setDate('');
                     setTeam('');
                     setLocation('all');
+                    setTimeFilter('all');
                     setScoreFilter('all');
                     setFactorFilter('all');
                   }}
@@ -1315,15 +1385,16 @@ export default function App() {
           const allResults = [...byTeams.values()].filter(r => r.state === 'post');
           
           // Compute top scorers from goal events
-          const playerGoals = new Map<string, { goals: number; penalties: number; team: string }>();
+          const playerGoals = new Map<string, { goals: number; penalties: number; team: string; matchIds: Set<string> }>();
           for (const result of allResults) {
             if (result.goals) {
               for (const goal of result.goals) {
                 if (goal.type === 'own-goal') continue; // Don't count own goals for scorer
                 const key = `${goal.player}|${goal.team}`;
-                const current = playerGoals.get(key) || { goals: 0, penalties: 0, team: goal.team };
+                const current = playerGoals.get(key) || { goals: 0, penalties: 0, team: goal.team, matchIds: new Set<string>() };
                 current.goals++;
                 if (goal.type === 'penalty') current.penalties++;
+                current.matchIds.add(result.id);
                 playerGoals.set(key, current);
               }
             }
@@ -1335,46 +1406,10 @@ export default function App() {
               team: data.team,
               goals: data.goals,
               penalties: data.penalties,
+              games: data.matchIds.size,
             }))
             .sort((a, b) => b.goals - a.goals)
             .slice(0, 10);
-          
-          // Compute team stats
-          const teamStats = new Map<string, { 
-            played: number; wins: number; draws: number; losses: number; 
-            goalsFor: number; goalsAgainst: number; cleanSheets: number 
-          }>();
-          
-          for (const result of allResults) {
-            const [scoreA, scoreB] = result.score.split('–').map(s => parseInt(s, 10) || 0);
-            
-            // Team A stats
-            const statsA = teamStats.get(result.teamA) || { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, cleanSheets: 0 };
-            statsA.played++;
-            statsA.goalsFor += scoreA;
-            statsA.goalsAgainst += scoreB;
-            if (scoreB === 0) statsA.cleanSheets++;
-            if (scoreA > scoreB) statsA.wins++;
-            else if (scoreA < scoreB) statsA.losses++;
-            else statsA.draws++;
-            teamStats.set(result.teamA, statsA);
-            
-            // Team B stats
-            const statsB = teamStats.get(result.teamB) || { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, cleanSheets: 0 };
-            statsB.played++;
-            statsB.goalsFor += scoreB;
-            statsB.goalsAgainst += scoreA;
-            if (scoreA === 0) statsB.cleanSheets++;
-            if (scoreB > scoreA) statsB.wins++;
-            else if (scoreB < scoreA) statsB.losses++;
-            else statsB.draws++;
-            teamStats.set(result.teamB, statsB);
-          }
-          
-          const sortedTeams = [...teamStats.entries()]
-            .map(([team, stats]) => ({ team, ...stats, gd: stats.goalsFor - stats.goalsAgainst }))
-            .sort((a, b) => (b.wins * 3 + b.draws) - (a.wins * 3 + a.draws) || b.gd - a.gd)
-            .slice(0, 8);
           
           // Find high-scoring matches and records
           const highScoringMatches = allResults
@@ -1410,192 +1445,304 @@ export default function App() {
           
           return (
           <div className="stats-page">
-            <div className="stats-header">
-              <h2>🏆 FIFA World Cup 2026 Statistics</h2>
-              <p className="meta">Live tournament statistics from {allResults.length} completed matches · {totalGoals} goals ({avgGoals} per match)</p>
+            <div className="stats-header stats-header-compact">
+              <h2>🏆 World Cup 2026 Stats</h2>
+              <div className="stats-summary-chips">
+                <span>{allResults.length} matches</span>
+                <span>{totalGoals} goals</span>
+                <span>{avgGoals} per game</span>
+              </div>
             </div>
 
-            {/* Golden Boot Section */}
-            <section className="stats-section">
-              <div className="section-header">
-                <h3>👟 Golden Boot Race</h3>
-                <span className="section-subtitle">Top Scorers</span>
-              </div>
-              {topScorers.length > 0 ? (
-                <>
-                  <div className="scorers-podium">
-                    {topScorers.slice(0, 3).map((player, idx) => (
-                      <div key={`${player.name}-${player.team}`} className={`podium-card rank-${idx + 1}`}>
-                        <div className="podium-rank">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}</div>
-                        <div className="podium-player">
-                          <TeamFlag team={player.team} size={32} />
-                          <div className="player-info">
-                            <span className="player-name">{player.name}</span>
-                            <span className="player-team">{player.team}</span>
-                          </div>
-                        </div>
-                        <div className="podium-stats">
-                          <div className="stat-main">
-                            <span className="stat-value">{player.goals}</span>
-                            <span className="stat-label">Goals</span>
-                          </div>
-                          {player.penalties > 0 && (
-                            <div className="stat-secondary">
-                              <span>({player.penalties} pen)</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <div className="scorers-list">
+            <div className="stats-grid-two-col">
+              <section className="stats-section stats-section-compact">
+                <div className="section-header section-header-compact">
+                  <h3>👟 Golden Boot</h3>
+                </div>
+                {topScorers.length > 0 ? (
+                  <div className="scorers-list scorers-list-compact">
                     <div className="list-header">
                       <span className="col-rank">#</span>
                       <span className="col-player">Player</span>
                       <span className="col-team">Team</span>
-                      <span className="col-goals">Goals</span>
-                      <span className="col-penalties">Pen</span>
+                      <span className="col-goals">G</span>
+                      <span className="col-games">GP</span>
+                      <span className="col-penalties" title="Penalty goals">PK</span>
                     </div>
                     {topScorers.map((player, idx) => (
                       <div key={`${player.name}-${player.team}`} className={`scorer-row ${idx < 3 ? 'top-3' : ''}`}>
-                        <span className="col-rank">{idx + 1}</span>
-                        <span className="col-player">
-                          <strong>{player.name}</strong>
+                        <span className="col-rank">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}</span>
+                        <span className="col-player"><strong>{player.name}</strong></span>
+                        <span className="col-team">
+                          <TeamFlag team={player.team} size={14} />
+                          {player.team}
                         </span>
-                    <span className="col-team">
-                      <TeamFlag team={player.team} size={16} />
-                      {player.team}
-                    </span>
                         <span className="col-goals">{player.goals}</span>
-                        <span className="col-penalties">{player.penalties || '-'}</span>
+                        <span className="col-games">{player.games}</span>
+                        <span className="col-penalties">{player.penalties || '—'}</span>
                       </div>
                     ))}
                   </div>
-                </>
-              ) : (
-                <p className="no-data">No goal data available yet. Check back after matches are played.</p>
-              )}
-            </section>
-
-            {/* Team Stats Section */}
-            <section className="stats-section">
-              <div className="section-header">
-                <h3>📊 Team Statistics</h3>
-                <span className="section-subtitle">Top Performing Nations</span>
-              </div>
-              {sortedTeams.length > 0 ? (
-                <div className="team-stats-grid">
-                  {sortedTeams.map((team) => (
-                    <div key={team.team} className="team-stat-card">
-                      <div className="team-header">
-                        <TeamFlag team={team.team} size={36} />
-                        <span className="team-name">{team.team}</span>
-                      </div>
-                      <div className="team-record">
-                        <span className="record-item win">{team.wins}W</span>
-                        <span className="record-item draw">{team.draws}D</span>
-                        <span className="record-item loss">{team.losses}L</span>
-                      </div>
-                      <div className="team-metrics">
-                        <div className="metric">
-                          <span className="metric-value">{team.goalsFor}</span>
-                          <span className="metric-label">Goals</span>
-                        </div>
-                        <div className="metric">
-                          <span className="metric-value">{team.goalsAgainst}</span>
-                          <span className="metric-label">Conceded</span>
-                        </div>
-                        <div className="metric">
-                          <span className="metric-value">{team.cleanSheets}</span>
-                          <span className="metric-label">Clean Sheets</span>
-                        </div>
-                        <div className="metric">
-                          <span className="metric-value">{team.gd > 0 ? '+' : ''}{team.gd}</span>
-                          <span className="metric-label">GD</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="no-data">No match data available yet.</p>
-              )}
-            </section>
-
-            {/* Tournament Records */}
-            <section className="stats-section">
-              <div className="section-header">
-                <h3>🏅 Tournament Records</h3>
-                <span className="section-subtitle">Notable Achievements</span>
-              </div>
-              <div className="records-grid">
-                <div className="record-card">
-                  <span className="record-icon">⚽</span>
-                  <span className="record-title">Total Goals</span>
-                  <span className="record-value">{totalGoals}</span>
-                  <span className="record-detail">{allResults.length} matches played</span>
-                </div>
-                <div className="record-card">
-                  <span className="record-icon">📈</span>
-                  <span className="record-title">Goals Per Match</span>
-                  <span className="record-value">{avgGoals}</span>
-                  <span className="record-detail">Tournament average</span>
-                </div>
-                {fastestGoal && (
-                  <div className="record-card">
-                    <span className="record-icon">💨</span>
-                    <span className="record-title">Fastest Goal</span>
-                    <span className="record-value">{fastestGoal.minute}</span>
-                    <span className="record-detail">{fastestGoal.player} ({fastestGoal.team})</span>
-                  </div>
+                ) : (
+                  <p className="no-data no-data-compact">No goal data yet — refresh after matches are played.</p>
                 )}
-                {highScoringMatches[0] && (
-                  <div className="record-card">
-                    <span className="record-icon">🔥</span>
-                    <span className="record-title">Most Goals in a Match</span>
-                    <span className="record-value">{highScoringMatches[0].totalGoals} goals</span>
-                    <span className="record-detail">{highScoringMatches[0].teamA} vs {highScoringMatches[0].teamB} ({highScoringMatches[0].score})</span>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* High Scoring Matches */}
-            {highScoringMatches.length > 0 && (
-              <section className="stats-section">
-                <div className="section-header">
-                  <h3>🎬 High Scoring Matches</h3>
-                  <span className="section-subtitle">Most Entertaining Games</span>
-                </div>
-                <div className="highlights-grid">
-                  {highScoringMatches.map((match) => (
-                    <div key={match.id} className="highlight-card type-high-scoring">
-                      <div className="highlight-badge">
-                        🔥 {match.totalGoals} Goals
-                      </div>
-                      <div className="highlight-match">
-                        <span className="highlight-teams">{match.teamA} vs {match.teamB}</span>
-                        <span className="highlight-score">{match.score}</span>
-                      </div>
-                      {match.goals && match.goals.length > 0 && (
-                        <div className="goal-scorers">
-                          {match.goals.slice(0, 4).map((g, i) => (
-                            <span key={i} className="goal-scorer">
-                              ⚽ {g.player} {g.minute}
-                            </span>
-                          ))}
-                          {match.goals.length > 4 && <span className="goal-scorer">+{match.goals.length - 4} more</span>}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
               </section>
-            )}
+
+              <section className="stats-section stats-section-compact">
+                <div className="section-header section-header-compact">
+                  <h3>📊 Snapshot</h3>
+                </div>
+                <div className="stats-records-row stats-records-stack">
+                  <div className="stats-record-chip">
+                    <span className="chip-label">Total goals</span>
+                    <span className="chip-value">{totalGoals}</span>
+                  </div>
+                  <div className="stats-record-chip">
+                    <span className="chip-label">Avg / match</span>
+                    <span className="chip-value">{avgGoals}</span>
+                  </div>
+                  {fastestGoal && (
+                    <div className="stats-record-chip">
+                      <span className="chip-label">Fastest goal</span>
+                      <span className="chip-value">{fastestGoal.minute}</span>
+                      <span className="chip-detail">{fastestGoal.player}</span>
+                    </div>
+                  )}
+                  {highScoringMatches[0] && (
+                    <div className="stats-record-chip">
+                      <span className="chip-label">Highest scoring</span>
+                      <span className="chip-value">{highScoringMatches[0].totalGoals} goals</span>
+                      <span className="chip-detail">{highScoringMatches[0].teamA} {highScoringMatches[0].score} {highScoringMatches[0].teamB}</span>
+                    </div>
+                  )}
+                </div>
+
+                {highScoringMatches.length > 0 && (
+                  <>
+                    <h4 className="stats-subheading">High-scoring matches</h4>
+                    <div className="scorers-list scorers-list-compact stats-matches-list">
+                      <div className="list-header">
+                        <span className="col-match">Match</span>
+                        <span className="col-score-sm">Score</span>
+                        <span className="col-total">Goals</span>
+                      </div>
+                      {highScoringMatches.map((match) => (
+                        <div key={match.id} className="scorer-row match-row-compact">
+                          <span className="col-match">{match.teamA} vs {match.teamB}</span>
+                          <span className="col-score-sm">{match.score}</span>
+                          <span className="col-total">{match.totalGoals}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </section>
+            </div>
           </div>
         );
         })()}
+
+        {tab === 'pattern' && (
+          <div className="pattern-page">
+            <div className="stats-header">
+              <h2>📈 Goal Pattern Lab</h2>
+              <p className="meta">
+                {patternAnalysis.sampleSize > 0
+                  ? `Analyzing ${patternAnalysis.sampleSize} completed matches · ${patternAnalysis.tournamentAvgGoals} goals per game`
+                  : 'Refresh ESPN data to start detecting patterns'}
+              </p>
+            </div>
+
+            <section className="stats-section pattern-insights">
+              <div className="section-header">
+                <h3>🔍 What we&apos;re seeing</h3>
+                <span className="section-subtitle">Live pattern signals</span>
+              </div>
+              <div className="pattern-insights-table-wrap">
+                <table className="pattern-insights-table">
+                  <thead>
+                    <tr>
+                      <th>Category</th>
+                      <th>Signal</th>
+                      <th>Finding</th>
+                      <th>Goals</th>
+                      <th>vs Avg</th>
+                      <th>Trend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {patternAnalysis.takeaways.map((row, i) => (
+                      <tr key={i} className={`insight-row trend-${row.trend}`}>
+                        <td className="insight-category">
+                          <span className="insight-icon">{row.icon}</span>
+                          {row.category}
+                        </td>
+                        <td className="insight-signal">{row.signal}</td>
+                        <td className="insight-finding">{row.finding}</td>
+                        <td className="insight-metric">
+                          <span className="metric-pill">{row.metric}</span>
+                          {row.sample > 0 && (
+                            <span className="sample-count">{row.sample} gp</span>
+                          )}
+                        </td>
+                        <td className="insight-delta">
+                          {row.delta != null ? (
+                            <span className={row.delta >= 0 ? 'delta-pos' : 'delta-neg'}>
+                              {row.delta >= 0 ? '+' : ''}{row.delta}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="insight-trend">
+                          <span className={`pattern-trend-badge ${row.trend}`}>
+                            {row.trend === 'high' ? '↑ High' : row.trend === 'low' ? '↓ Low' : '≈ Avg'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="stats-section pattern-rivalries-section">
+              <div className="section-header">
+                <h3>⚔️ Famous FIFA rivalries</h3>
+                <span className="section-subtitle">
+                  {FAMOUS_RIVALRIES.filter((r) => r.wc2026).length} possible in WC 2026
+                </span>
+              </div>
+              <div className="rivalries-table-wrap">
+                <table className="rivalries-table">
+                  <thead>
+                    <tr>
+                      <th>Matchup</th>
+                      <th>Rivalry</th>
+                      <th>Region</th>
+                      <th>Story</th>
+                      <th>WC 2026</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {FAMOUS_RIVALRIES.map((r) => (
+                      <tr key={`${r.teamA}-${r.teamB}`} className={`rivalry-row intensity-${r.intensity} ${r.wc2026 ? 'in-tournament' : ''}`}>
+                        <td className="rivalry-matchup">
+                          <span className="rivalry-teams">
+                            <TeamFlag team={r.teamA} size={18} /> {r.teamA}
+                            <span className="vs">vs</span>
+                            <TeamFlag team={r.teamB} size={18} /> {r.teamB}
+                          </span>
+                        </td>
+                        <td className="rivalry-name">
+                          <strong>{r.name}</strong>
+                          <span className={`intensity-tag ${r.intensity}`}>{r.intensity}</span>
+                        </td>
+                        <td className="rivalry-region">{r.region}</td>
+                        <td className="rivalry-story">{r.story}</td>
+                        <td className="rivalry-wc">
+                          {r.wc2026 ? (
+                            <span className="wc-badge yes">Possible</span>
+                          ) : (
+                            <span className="wc-badge no">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="stats-section">
+              <div className="section-header">
+                <h3>🕐 Time slot vs goals</h3>
+                <span className="section-subtitle">US Eastern kickoff (TV primetime proxy)</span>
+              </div>
+              <PatternBucketGrid buckets={patternAnalysis.timeSlots} baseline={patternAnalysis.tournamentAvgGoals} />
+            </section>
+
+            <section className="stats-section">
+              <div className="section-header">
+                <h3>📺 Viewership proxy</h3>
+                <span className="section-subtitle">Star nations &amp; headline teams</span>
+              </div>
+              <PatternBucketGrid buckets={patternAnalysis.viewership} baseline={patternAnalysis.tournamentAvgGoals} />
+            </section>
+
+            <div className="pattern-two-col">
+              <section className="stats-section">
+                <div className="section-header">
+                  <h3>📅 Weekend vs weekday</h3>
+                </div>
+                <PatternBucketGrid buckets={patternAnalysis.weekend} baseline={patternAnalysis.tournamentAvgGoals} compact />
+              </section>
+              <section className="stats-section">
+                <div className="section-header">
+                  <h3>🏠 Host nations</h3>
+                </div>
+                <PatternBucketGrid buckets={patternAnalysis.hostNation} baseline={patternAnalysis.tournamentAvgGoals} compact />
+              </section>
+            </div>
+
+            <section className="stats-section">
+              <div className="section-header">
+                <h3>⚔️ Rivalries &amp; ranking gap</h3>
+                <span className="section-subtitle">Derbies and mismatch theory</span>
+              </div>
+              <div className="pattern-two-col">
+                <PatternBucketGrid buckets={patternAnalysis.rivalries} baseline={patternAnalysis.tournamentAvgGoals} compact />
+                <PatternBucketGrid buckets={patternAnalysis.rankingGap} baseline={patternAnalysis.tournamentAvgGoals} compact />
+              </div>
+            </section>
+
+            <section className="stats-section">
+              <div className="section-header">
+                <h3>🌎 Venue region</h3>
+                <span className="section-subtitle">USA · Mexico · Canada</span>
+              </div>
+              <PatternBucketGrid buckets={patternAnalysis.regions} baseline={patternAnalysis.tournamentAvgGoals} />
+            </section>
+
+            <section className="stats-section">
+              <div className="section-header">
+                <h3>🎯 Upcoming — entertainment radar</h3>
+                <span className="section-subtitle">Pattern-weighted picks</span>
+              </div>
+              {patternAnalysis.upcoming.length > 0 ? (
+                <div className="pattern-upcoming-grid">
+                  {patternAnalysis.upcoming.map((m) => (
+                    <div key={m.id} className="pattern-upcoming-card">
+                      <div className="pattern-upcoming-top">
+                        <span className="pattern-teams">
+                          <TeamFlag team={m.teamA} size={18} /> {m.teamA}
+                          <span className="vs">vs</span>
+                          <TeamFlag team={m.teamB} size={18} /> {m.teamB}
+                        </span>
+                        <span className={`pattern-score ${m.entertainmentScore >= 70 ? 'hot' : m.entertainmentScore >= 50 ? 'warm' : 'cool'}`}>
+                          {m.entertainmentScore}
+                        </span>
+                      </div>
+                      <div className="pattern-upcoming-meta">
+                        <span>{fmtKickoff(m.kickoff)}</span>
+                        <span className="pattern-predicted">~{m.predictedGoals} goals</span>
+                      </div>
+                      <div className="pattern-signals">
+                        {m.signals.map((s) => (
+                          <span key={s} className="pattern-signal">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="no-data">All group fixtures completed — knockout patterns coming soon.</p>
+              )}
+            </section>
+
+            <p className="pattern-disclaimer">
+              Patterns are descriptive, not guarantees. Viewership is estimated from star teams and primetime slots — not actual TV ratings.
+            </p>
+          </div>
+        )}
 
         {tab === 'bracket' && (
           <div className="bracket-page">
