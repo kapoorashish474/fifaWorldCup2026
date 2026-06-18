@@ -38,7 +38,7 @@ import { useDynamicFactors } from './hooks/useDynamicFactors';
 import type { MatchDynamicFactors } from './lib/dynamicFactors';
 import { useLearning } from './lib/useLearning';
 import { FIFA_RANKINGS, WORLD_CUP_TITLES, RECENT_FORM } from './lib/predictionEngine';
-import { ROBINHOOD_BETS, CATEGORY_LABELS, DIFFICULTY_COLORS, type BetCategory } from './data/robinhoodBets';
+import { Dropdown, type DropdownOption } from './components/Dropdown';
 
 // Classic rivalries
 const RIVALRIES: Record<string, string> = {
@@ -797,91 +797,155 @@ export default function App() {
           ))}
         </nav>
 
-        {(tab === 'schedule' || tab === 'accuracy') && (
-          <div className="filter-bar">
-            <select id="model-filter" className="filter-select" value={model} onChange={(e) => setModel(e.target.value)} aria-label="Model">
-              <option value="all">All models</option>
-              {MODELS.map((md) => (
-                <option key={md.id} value={md.id}>{md.name}</option>
-              ))}
-            </select>
-            {tab === 'schedule' && (
-              <>
-                <select id="stage-filter" className="filter-select" value={stage} onChange={(e) => setStage(e.target.value as 'all' | ScheduleStage)} aria-label="Stage">
-                  <option value="all">All stages</option>
-                  {ALL_STAGES.map((s) => (
-                    <option key={s.key} value={s.key}>{s.label}</option>
-                  ))}
-                </select>
-                <select id="date-filter" className="filter-select" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date">
-                  <option value="">All dates</option>
-                  {ALL_DATES.map((d) => {
-                    const today = new Date().toISOString().split('T')[0];
-                    const isPast = d < today;
-                    const isToday = d === today;
-                    return (
-                      <option 
-                        key={d} 
-                        value={d} 
-                        className={isPast ? 'date-past' : isToday ? 'date-today' : 'date-future'}
-                        style={{ color: isPast ? '#22c55e' : isToday ? '#f59e0b' : '#6b7280' }}
-                      >
-                        {isPast ? '✓ ' : isToday ? '● ' : ''}{fmtDateOption(d)}
-                      </option>
-                    );
-                  })}
-                </select>
-                <select id="location-filter" className="filter-select" value={location} onChange={(e) => setLocation(e.target.value)} aria-label="Location">
-                  <option value="all">All locations</option>
-                  {ALL_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
-                </select>
-                <select id="score-filter" className="filter-select" value={scoreFilter} onChange={(e) => setScoreFilter(e.target.value)} aria-label="Score">
-                  <option value="all">All scores</option>
-                  {scoreData.map(({ score, count }) => (
-                    <option key={score} value={score} style={{ color: score.includes('–0') ? '#22c55e' : '#6b7280' }}>
-                      {score} ({count})
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-            <select id="team-filter" className="filter-select filter-select-team" value={team} onChange={(e) => setTeam(e.target.value)} aria-label="Team">
-              <option value="">All teams</option>
-              {ALL_TEAMS.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-            {tab === 'schedule' && (
-              <select id="factor-filter" className="filter-select" value={factorFilter} onChange={(e) => setFactorFilter(e.target.value)} aria-label="Factor">
-                <option value="all">All factors</option>
-                <option value="worked">Factors worked</option>
-                <option value="failed">Factors failed</option>
-                <optgroup label="Specific factor worked">
-                  {ALL_FACTORS.map((f) => (
-                    <option key={f.key} value={f.key}>{f.label}</option>
-                  ))}
-                </optgroup>
-              </select>
-            )}
-            {(date || team || location !== 'all' || stage !== 'all' || model !== 'all' || scoreFilter !== 'all' || factorFilter !== 'all') && (
-              <button
-                type="button"
-                className="filter-clear"
-                onClick={() => {
-                  setModel('all');
-                  setStage('all');
-                  setDate('');
-                  setTeam('');
-                  setLocation('all');
-                  setScoreFilter('all');
-                  setFactorFilter('all');
-                }}
-              >
-                Reset
-              </button>
-            )}
-          </div>
-        )}
+        {(tab === 'schedule' || tab === 'accuracy') && (() => {
+          const today = new Date().toISOString().split('T')[0];
+          
+          const modelOptions: DropdownOption[] = [
+            { value: 'all', label: 'All models', icon: '🤖' },
+            ...MODELS.map((md) => ({
+              value: md.id,
+              label: md.name,
+              icon: md.id === 'claude' ? '🟠' : md.id === 'gpt' ? '🟢' : '🟣',
+            })),
+          ];
+
+          const stageOptions: DropdownOption[] = [
+            { value: 'all', label: 'All stages', icon: '🏟️' },
+            ...ALL_STAGES.map((s) => ({
+              value: s.key,
+              label: s.label,
+              icon: s.key === 'group' ? '📊' : s.key === 'final' ? '🏆' : '⚔️',
+            })),
+          ];
+
+          const dateOptions: DropdownOption[] = [
+            { value: '', label: 'All dates', icon: '📅' },
+            ...ALL_DATES.map((d) => {
+              const isPast = d < today;
+              const isToday = d === today;
+              return {
+                value: d,
+                label: fmtDateOption(d),
+                icon: isPast ? '✓' : isToday ? '●' : '○',
+                color: isPast ? 'oklch(50% 0.15 150)' : isToday ? 'oklch(60% 0.18 75)' : undefined,
+              };
+            }),
+          ];
+
+          const locationOptions: DropdownOption[] = [
+            { value: 'all', label: 'All locations', icon: '📍' },
+            ...ALL_LOCATIONS.map((loc) => ({
+              value: loc,
+              label: loc,
+              icon: '🏙️',
+            })),
+          ];
+
+          const scoreOptions: DropdownOption[] = [
+            { value: 'all', label: 'All scores', icon: '⚽' },
+            ...scoreData.map(({ score, count }) => ({
+              value: score,
+              label: score,
+              badge: String(count),
+              icon: score.includes('–0') ? '🛡️' : '⚽',
+            })),
+          ];
+
+          const teamOptions: DropdownOption[] = [
+            { value: '', label: 'All teams', icon: '🌍' },
+            ...ALL_TEAMS.map((t) => ({
+              value: t,
+              label: t,
+            })),
+          ];
+
+          const factorOptions: DropdownOption[] = [
+            { value: 'all', label: 'All factors', icon: '📊' },
+            { value: 'worked', label: 'Worked', icon: '✅' },
+            { value: 'failed', label: 'Failed', icon: '❌' },
+            ...ALL_FACTORS.map((f) => ({
+              value: f.key,
+              label: f.label,
+              icon: '📈',
+              group: 'Specific Factor',
+            })),
+          ];
+
+          return (
+            <div className="filter-bar">
+              <Dropdown
+                value={model}
+                options={modelOptions}
+                onChange={setModel}
+                placeholder="Model"
+                className="dropdown-model"
+              />
+              {tab === 'schedule' && (
+                <>
+                  <Dropdown
+                    value={stage}
+                    options={stageOptions}
+                    onChange={(v) => setStage(v as 'all' | ScheduleStage)}
+                    placeholder="Stage"
+                  />
+                  <Dropdown
+                    value={date}
+                    options={dateOptions}
+                    onChange={setDate}
+                    placeholder="Date"
+                    className="dropdown-date"
+                  />
+                  <Dropdown
+                    value={location}
+                    options={locationOptions}
+                    onChange={setLocation}
+                    placeholder="Location"
+                  />
+                  <Dropdown
+                    value={scoreFilter}
+                    options={scoreOptions}
+                    onChange={setScoreFilter}
+                    placeholder="Score"
+                  />
+                </>
+              )}
+              <Dropdown
+                value={team}
+                options={teamOptions}
+                onChange={setTeam}
+                placeholder="Team"
+                className="dropdown-team"
+                searchable
+              />
+              {tab === 'schedule' && (
+                <Dropdown
+                  value={factorFilter}
+                  options={factorOptions}
+                  onChange={setFactorFilter}
+                  placeholder="Factor"
+                />
+              )}
+              {(date || team || location !== 'all' || stage !== 'all' || model !== 'all' || scoreFilter !== 'all' || factorFilter !== 'all') && (
+                <button
+                  type="button"
+                  className="filter-clear"
+                  onClick={() => {
+                    setModel('all');
+                    setStage('all');
+                    setDate('');
+                    setTeam('');
+                    setLocation('all');
+                    setScoreFilter('all');
+                    setFactorFilter('all');
+                  }}
+                >
+                  <span className="clear-icon">✕</span>
+                  Reset filters
+                </button>
+              )}
+            </div>
+          );
+        })()}
       </header>
 
       <main>
@@ -1175,23 +1239,29 @@ export default function App() {
                       </div>
                     ) : isEditing || (!existingBet && editingBet === matchId) ? (
                       <div className="bet-form-inline">
-                        <select
+                        <Dropdown
                           value={inputs.pick}
-                          onChange={(e) => setBetInputs({ ...betInputs, [matchId]: { ...inputs, pick: e.target.value } })}
-                        >
-                          <option value="">Pick</option>
-                          <option value={fix.teamA}>{fix.teamA}</option>
-                          <option value={fix.teamB}>{fix.teamB}</option>
-                          <option value="Draw">Draw</option>
-                        </select>
-                        <input
-                          type="number"
-                          placeholder="$"
-                          step="1"
-                          min="0"
-                          value={inputs.stake}
-                          onChange={(e) => setBetInputs({ ...betInputs, [matchId]: { ...inputs, stake: e.target.value } })}
+                          options={[
+                            { value: '', label: 'Pick winner', icon: '🎯' },
+                            { value: fix.teamA, label: fix.teamA, icon: '🏠' },
+                            { value: fix.teamB, label: fix.teamB, icon: '✈️' },
+                            { value: 'Draw', label: 'Draw', icon: '🤝' },
+                          ]}
+                          onChange={(v) => setBetInputs({ ...betInputs, [matchId]: { ...inputs, pick: v } })}
+                          placeholder="Pick"
+                          className="dropdown-bet-pick"
                         />
+                        <div className="stake-input">
+                          <span className="stake-prefix">$</span>
+                          <input
+                            type="number"
+                            placeholder="0"
+                            step="1"
+                            min="0"
+                            value={inputs.stake}
+                            onChange={(e) => setBetInputs({ ...betInputs, [matchId]: { ...inputs, stake: e.target.value } })}
+                          />
+                        </div>
                         <button
                           type="button"
                           className="btn-save"
@@ -1240,114 +1310,307 @@ export default function App() {
           </div>
         )}
 
-        {tab === 'robinhood' && (
-          <div className="robinhood-page">
-            <p className="meta">
-              Analyzing {ROBINHOOD_BETS.length} FIFA World Cup betting markets · 
-              {ROBINHOOD_BETS.filter(b => b.difficulty === 'easy').length} easy · 
-              {ROBINHOOD_BETS.filter(b => b.difficulty === 'medium').length} medium · 
-              {ROBINHOOD_BETS.filter(b => b.difficulty === 'hard').length} hard
-            </p>
-
-            <div className="rh-filters">
-              <span className="filter-label">Filter by difficulty:</span>
-              <button className="rh-filter-btn active" data-filter="all">All</button>
-              <button className="rh-filter-btn easy" data-filter="easy">Easy</button>
-              <button className="rh-filter-btn medium" data-filter="medium">Medium</button>
-              <button className="rh-filter-btn hard" data-filter="hard">Hard</button>
+        {tab === 'stats' && (() => {
+          // Compute real stats from ESPN data
+          const allResults = [...byTeams.values()].filter(r => r.state === 'post');
+          
+          // Compute top scorers from goal events
+          const playerGoals = new Map<string, { goals: number; penalties: number; team: string }>();
+          for (const result of allResults) {
+            if (result.goals) {
+              for (const goal of result.goals) {
+                if (goal.type === 'own-goal') continue; // Don't count own goals for scorer
+                const key = `${goal.player}|${goal.team}`;
+                const current = playerGoals.get(key) || { goals: 0, penalties: 0, team: goal.team };
+                current.goals++;
+                if (goal.type === 'penalty') current.penalties++;
+                playerGoals.set(key, current);
+              }
+            }
+          }
+          
+          const topScorers = [...playerGoals.entries()]
+            .map(([key, data]) => ({
+              name: key.split('|')[0],
+              team: data.team,
+              goals: data.goals,
+              penalties: data.penalties,
+            }))
+            .sort((a, b) => b.goals - a.goals)
+            .slice(0, 10);
+          
+          // Compute team stats
+          const teamStats = new Map<string, { 
+            played: number; wins: number; draws: number; losses: number; 
+            goalsFor: number; goalsAgainst: number; cleanSheets: number 
+          }>();
+          
+          for (const result of allResults) {
+            const [scoreA, scoreB] = result.score.split('–').map(s => parseInt(s, 10) || 0);
+            
+            // Team A stats
+            const statsA = teamStats.get(result.teamA) || { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, cleanSheets: 0 };
+            statsA.played++;
+            statsA.goalsFor += scoreA;
+            statsA.goalsAgainst += scoreB;
+            if (scoreB === 0) statsA.cleanSheets++;
+            if (scoreA > scoreB) statsA.wins++;
+            else if (scoreA < scoreB) statsA.losses++;
+            else statsA.draws++;
+            teamStats.set(result.teamA, statsA);
+            
+            // Team B stats
+            const statsB = teamStats.get(result.teamB) || { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, cleanSheets: 0 };
+            statsB.played++;
+            statsB.goalsFor += scoreB;
+            statsB.goalsAgainst += scoreA;
+            if (scoreA === 0) statsB.cleanSheets++;
+            if (scoreB > scoreA) statsB.wins++;
+            else if (scoreB < scoreA) statsB.losses++;
+            else statsB.draws++;
+            teamStats.set(result.teamB, statsB);
+          }
+          
+          const sortedTeams = [...teamStats.entries()]
+            .map(([team, stats]) => ({ team, ...stats, gd: stats.goalsFor - stats.goalsAgainst }))
+            .sort((a, b) => (b.wins * 3 + b.draws) - (a.wins * 3 + a.draws) || b.gd - a.gd)
+            .slice(0, 8);
+          
+          // Find high-scoring matches and records
+          const highScoringMatches = allResults
+            .map(r => {
+              const [a, b] = r.score.split('–').map(s => parseInt(s, 10) || 0);
+              return { ...r, totalGoals: a + b, margin: Math.abs(a - b) };
+            })
+            .sort((a, b) => b.totalGoals - a.totalGoals)
+            .slice(0, 4);
+          
+          // Find fastest goal
+          let fastestGoal: { player: string; team: string; minute: string } | null = null;
+          for (const result of allResults) {
+            if (result.goals) {
+              for (const goal of result.goals) {
+                if (goal.type === 'own-goal') continue;
+                const minuteNum = parseInt(goal.minute.replace("'", ''), 10) || 999;
+                const currentFastest = fastestGoal ? parseInt(fastestGoal.minute.replace("'", ''), 10) || 999 : 999;
+                if (minuteNum < currentFastest) {
+                  fastestGoal = { player: goal.player, team: goal.team, minute: goal.minute };
+                }
+              }
+            }
+          }
+          
+          // Tournament totals
+          let totalGoals = 0;
+          for (const r of allResults) {
+            const [a, b] = r.score.split('–').map(s => parseInt(s, 10) || 0);
+            totalGoals += a + b;
+          }
+          const avgGoals = allResults.length > 0 ? (totalGoals / allResults.length).toFixed(2) : '0';
+          
+          return (
+          <div className="stats-page">
+            <div className="stats-header">
+              <h2>🏆 FIFA World Cup 2026 Statistics</h2>
+              <p className="meta">Live tournament statistics from {allResults.length} completed matches · {totalGoals} goals ({avgGoals} per match)</p>
             </div>
 
-            {(['outright', 'group', 'player', 'special'] as BetCategory[]).map((category) => {
-              const categoryBets = ROBINHOOD_BETS.filter(b => b.category === category);
-              if (categoryBets.length === 0) return null;
-              return (
-                <div key={category} className="rh-category">
-                  <h3 className="rh-category-title">{CATEGORY_LABELS[category]} Markets</h3>
-                  <div className="rh-bets-grid">
-                    {categoryBets.map((bet) => (
-                      <div key={bet.id} className={`rh-bet-card difficulty-${bet.difficulty}`}>
-                        <div className="rh-bet-header">
-                          <span className="rh-bet-title">{bet.title}</span>
-                          <span 
-                            className={`rh-difficulty-badge ${bet.difficulty}`}
-                            style={{ backgroundColor: DIFFICULTY_COLORS[bet.difficulty] }}
-                          >
-                            {bet.difficulty.charAt(0).toUpperCase() + bet.difficulty.slice(1)}
-                          </span>
-                        </div>
-                        <p className="rh-bet-description">{bet.description}</p>
-                        <div className="rh-bet-options">
-                          {bet.options.slice(0, 6).map((opt) => (
-                            <span 
-                              key={opt} 
-                              className={`rh-option ${opt === bet.ourPick ? 'picked' : ''}`}
-                            >
-                              {opt}
-                              {opt === bet.ourPick && <span className="pick-indicator">★</span>}
-                            </span>
-                          ))}
-                          {bet.options.length > 6 && (
-                            <span className="rh-option more">+{bet.options.length - 6} more</span>
-                          )}
-                        </div>
-                        <div className="rh-our-pick">
-                          <div className="pick-header">
-                            <span className="pick-label">Our Pick:</span>
-                            <span className="pick-value">{bet.ourPick}</span>
-                            <span className={`confidence-badge ${bet.confidence >= 70 ? 'high' : bet.confidence >= 50 ? 'medium' : 'low'}`}>
-                              {bet.confidence}% confident
-                            </span>
+            {/* Golden Boot Section */}
+            <section className="stats-section">
+              <div className="section-header">
+                <h3>👟 Golden Boot Race</h3>
+                <span className="section-subtitle">Top Scorers</span>
+              </div>
+              {topScorers.length > 0 ? (
+                <>
+                  <div className="scorers-podium">
+                    {topScorers.slice(0, 3).map((player, idx) => (
+                      <div key={`${player.name}-${player.team}`} className={`podium-card rank-${idx + 1}`}>
+                        <div className="podium-rank">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}</div>
+                        <div className="podium-player">
+                          <TeamFlag team={player.team} size={32} />
+                          <div className="player-info">
+                            <span className="player-name">{player.name}</span>
+                            <span className="player-team">{player.team}</span>
                           </div>
-                          <p className="pick-reasoning">{bet.reasoning}</p>
                         </div>
-                        <div className="rh-bet-footer">
-                          <span className={`rh-status status-${bet.status}`}>
-                            {bet.status === 'open' ? '🔓 Open' : bet.status === 'won' ? '✓ Won' : bet.status === 'lost' ? '✗ Lost' : '⊘ Void'}
-                          </span>
-                          {bet.result && <span className="rh-result">Result: {bet.result}</span>}
+                        <div className="podium-stats">
+                          <div className="stat-main">
+                            <span className="stat-value">{player.goals}</span>
+                            <span className="stat-label">Goals</span>
+                          </div>
+                          {player.penalties > 0 && (
+                            <div className="stat-secondary">
+                              <span>({player.penalties} pen)</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
-                </div>
-              );
-            })}
+                  
+                  <div className="scorers-list">
+                    <div className="list-header">
+                      <span className="col-rank">#</span>
+                      <span className="col-player">Player</span>
+                      <span className="col-team">Team</span>
+                      <span className="col-goals">Goals</span>
+                      <span className="col-penalties">Pen</span>
+                    </div>
+                    {topScorers.map((player, idx) => (
+                      <div key={`${player.name}-${player.team}`} className={`scorer-row ${idx < 3 ? 'top-3' : ''}`}>
+                        <span className="col-rank">{idx + 1}</span>
+                        <span className="col-player">
+                          <strong>{player.name}</strong>
+                        </span>
+                    <span className="col-team">
+                      <TeamFlag team={player.team} size={16} />
+                      {player.team}
+                    </span>
+                        <span className="col-goals">{player.goals}</span>
+                        <span className="col-penalties">{player.penalties || '-'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="no-data">No goal data available yet. Check back after matches are played.</p>
+              )}
+            </section>
 
-            <div className="rh-summary">
-              <h3>Difficulty Legend</h3>
-              <div className="difficulty-legend">
-                <div className="legend-item">
-                  <span className="legend-dot easy" style={{ backgroundColor: DIFFICULTY_COLORS.easy }}></span>
-                  <span className="legend-label">Easy</span>
-                  <span className="legend-desc">High predictability, clear favorites</span>
-                </div>
-                <div className="legend-item">
-                  <span className="legend-dot medium" style={{ backgroundColor: DIFFICULTY_COLORS.medium }}></span>
-                  <span className="legend-label">Medium</span>
-                  <span className="legend-desc">Competitive field, some uncertainty</span>
-                </div>
-                <div className="legend-item">
-                  <span className="legend-dot hard" style={{ backgroundColor: DIFFICULTY_COLORS.hard }}></span>
-                  <span className="legend-label">Hard</span>
-                  <span className="legend-desc">Unpredictable, many variables</span>
-                </div>
+            {/* Team Stats Section */}
+            <section className="stats-section">
+              <div className="section-header">
+                <h3>📊 Team Statistics</h3>
+                <span className="section-subtitle">Top Performing Nations</span>
               </div>
-            </div>
+              {sortedTeams.length > 0 ? (
+                <div className="team-stats-grid">
+                  {sortedTeams.map((team) => (
+                    <div key={team.team} className="team-stat-card">
+                      <div className="team-header">
+                        <TeamFlag team={team.team} size={36} />
+                        <span className="team-name">{team.team}</span>
+                      </div>
+                      <div className="team-record">
+                        <span className="record-item win">{team.wins}W</span>
+                        <span className="record-item draw">{team.draws}D</span>
+                        <span className="record-item loss">{team.losses}L</span>
+                      </div>
+                      <div className="team-metrics">
+                        <div className="metric">
+                          <span className="metric-value">{team.goalsFor}</span>
+                          <span className="metric-label">Goals</span>
+                        </div>
+                        <div className="metric">
+                          <span className="metric-value">{team.goalsAgainst}</span>
+                          <span className="metric-label">Conceded</span>
+                        </div>
+                        <div className="metric">
+                          <span className="metric-value">{team.cleanSheets}</span>
+                          <span className="metric-label">Clean Sheets</span>
+                        </div>
+                        <div className="metric">
+                          <span className="metric-value">{team.gd > 0 ? '+' : ''}{team.gd}</span>
+                          <span className="metric-label">GD</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="no-data">No match data available yet.</p>
+              )}
+            </section>
+
+            {/* Tournament Records */}
+            <section className="stats-section">
+              <div className="section-header">
+                <h3>🏅 Tournament Records</h3>
+                <span className="section-subtitle">Notable Achievements</span>
+              </div>
+              <div className="records-grid">
+                <div className="record-card">
+                  <span className="record-icon">⚽</span>
+                  <span className="record-title">Total Goals</span>
+                  <span className="record-value">{totalGoals}</span>
+                  <span className="record-detail">{allResults.length} matches played</span>
+                </div>
+                <div className="record-card">
+                  <span className="record-icon">📈</span>
+                  <span className="record-title">Goals Per Match</span>
+                  <span className="record-value">{avgGoals}</span>
+                  <span className="record-detail">Tournament average</span>
+                </div>
+                {fastestGoal && (
+                  <div className="record-card">
+                    <span className="record-icon">💨</span>
+                    <span className="record-title">Fastest Goal</span>
+                    <span className="record-value">{fastestGoal.minute}</span>
+                    <span className="record-detail">{fastestGoal.player} ({fastestGoal.team})</span>
+                  </div>
+                )}
+                {highScoringMatches[0] && (
+                  <div className="record-card">
+                    <span className="record-icon">🔥</span>
+                    <span className="record-title">Most Goals in a Match</span>
+                    <span className="record-value">{highScoringMatches[0].totalGoals} goals</span>
+                    <span className="record-detail">{highScoringMatches[0].teamA} vs {highScoringMatches[0].teamB} ({highScoringMatches[0].score})</span>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* High Scoring Matches */}
+            {highScoringMatches.length > 0 && (
+              <section className="stats-section">
+                <div className="section-header">
+                  <h3>🎬 High Scoring Matches</h3>
+                  <span className="section-subtitle">Most Entertaining Games</span>
+                </div>
+                <div className="highlights-grid">
+                  {highScoringMatches.map((match) => (
+                    <div key={match.id} className="highlight-card type-high-scoring">
+                      <div className="highlight-badge">
+                        🔥 {match.totalGoals} Goals
+                      </div>
+                      <div className="highlight-match">
+                        <span className="highlight-teams">{match.teamA} vs {match.teamB}</span>
+                        <span className="highlight-score">{match.score}</span>
+                      </div>
+                      {match.goals && match.goals.length > 0 && (
+                        <div className="goal-scorers">
+                          {match.goals.slice(0, 4).map((g, i) => (
+                            <span key={i} className="goal-scorer">
+                              ⚽ {g.player} {g.minute}
+                            </span>
+                          ))}
+                          {match.goals.length > 4 && <span className="goal-scorer">+{match.goals.length - 4} more</span>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
-        )}
+        );
+        })()}
 
         {tab === 'bracket' && (
           <div className="bracket-page">
             <div className="bracket-controls">
-              <select 
-                className="filter-select" 
-                value={model} 
-                onChange={(e) => setModel(e.target.value)}
-              >
-                {MODELS.map((md) => (
-                  <option key={md.id} value={md.id}>{md.name}</option>
-                ))}
-              </select>
+              <Dropdown
+                value={model === 'all' ? MODELS[0].id : model}
+                options={MODELS.map((md) => ({
+                  value: md.id,
+                  label: md.name,
+                  icon: md.id === 'claude' ? '🟠' : md.id === 'gpt' ? '🟢' : '🟣',
+                }))}
+                onChange={setModel}
+                placeholder="Select Model"
+                className="dropdown-model"
+              />
             </div>
 
             {/* Tournament Stats */}
