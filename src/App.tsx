@@ -34,6 +34,8 @@ import { NAV_TABS, TAB_LABELS, TAB_PATHS } from './lib/routes';
 import { useEspnResults, useNow } from './lib/useScheduleClock';
 import { usePathTab } from './lib/usePathTab';
 import { useBets } from './lib/useBets';
+import { useDynamicFactors } from './hooks/useDynamicFactors';
+import type { MatchDynamicFactors } from './lib/dynamicFactors';
 import { useLearning } from './lib/useLearning';
 import { FIFA_RANKINGS, WORLD_CUP_TITLES, RECENT_FORM } from './lib/predictionEngine';
 import { ROBINHOOD_BETS, CATEGORY_LABELS, DIFFICULTY_COLORS, type BetCategory } from './data/robinhoodBets';
@@ -90,6 +92,7 @@ interface Pick { m: MatchPrediction; md: ModelPrediction }
 
 interface SlotGroup {
   key: string;
+  id: string;
   stage: MatchPrediction['stage'];
   kickoff: string;
   slot: number;
@@ -170,12 +173,14 @@ function SlotCard({
   now,
   actual,
   aiPrediction,
+  dynamicFactors,
 }: {
   group: SlotGroup;
   timing: MatchTiming;
   now: number;
   actual?: EspnResult;
   aiPrediction?: ReturnType<typeof import('./lib/predictionEngine').predictMatch>;
+  dynamicFactors?: MatchDynamicFactors;
 }) {
   const st = stageInfo(group.stage);
   const stageLabel = group.stage === 'group' && group.groupLetter
@@ -317,6 +322,36 @@ function SlotCard({
               </span>
             );
           })}
+        </div>
+      )}
+      
+      {dynamicFactors && dynamicFactors.adjustments.length > 0 && !isFinished && (
+        <div className="dynamic-factors">
+          <span className="dynamic-label">🔴 Live Factors</span>
+          <div className="dynamic-adjustments">
+            {dynamicFactors.weather && (
+              <span className="dynamic-weather" title={dynamicFactors.weather.description}>
+                {dynamicFactors.weather.condition === 'rain' ? '🌧️' : 
+                 dynamicFactors.weather.condition === 'hot' ? '🔥' : 
+                 dynamicFactors.weather.condition === 'cold' ? '❄️' : '☀️'}
+                {dynamicFactors.weather.temp}°C
+              </span>
+            )}
+            {dynamicFactors.adjustments.map((adj, i) => (
+              <span 
+                key={i} 
+                className={`dynamic-chip ${adj.favoredTeam === group.teamA ? 'team-a' : adj.favoredTeam === group.teamB ? 'team-b' : ''}`}
+                title={adj.reason}
+              >
+                {adj.icon} {adj.factor}: {adj.favoredTeam !== 'neutral' && adj.favoredTeam !== 'physical' ? adj.favoredTeam : 'Even'}
+              </span>
+            ))}
+          </div>
+          {(dynamicFactors.totalAdjustmentA !== 0 || dynamicFactors.totalAdjustmentB !== 0) && (
+            <div className="dynamic-summary">
+              Adjustment: {group.teamA} {dynamicFactors.totalAdjustmentA > 0 ? '+' : ''}{dynamicFactors.totalAdjustmentA} | {group.teamB} {dynamicFactors.totalAdjustmentB > 0 ? '+' : ''}{dynamicFactors.totalAdjustmentB}
+            </div>
+          )}
         </div>
       )}
       
@@ -570,6 +605,21 @@ export default function App() {
   const { byId, byTeams, loading, error, lastFetchedAt, fetchMs, refresh, hasData } = useEspnResults();
   const { bets, summary, error: betsError, addBet, settleBet, deleteBet } = useBets();
   const { getPrediction } = useLearning();
+  const { loading: dynamicLoading, computeForMatches, getFactors } = useDynamicFactors();
+
+  // Combined refresh that fetches ESPN data and computes dynamic factors
+  const handleRefresh = useCallback(async () => {
+    await refresh();
+    // Compute dynamic factors for upcoming matches
+    const matchesToCompute = GROUP_FIXTURES.map(f => ({
+      id: f.id,
+      teamA: f.teamA,
+      teamB: f.teamB,
+      kickoff: f.kickoff,
+      venue: f.venue,
+    }));
+    await computeForMatches(matchesToCompute, byTeams);
+  }, [refresh, computeForMatches, byTeams]);
 
   const [editingBet, setEditingBet] = useState<string | null>(null);
   const [betInputs, setBetInputs] = useState<Record<string, { pick: string; stake: string }>>({});
@@ -604,6 +654,7 @@ export default function App() {
         if (!map.has(key)) {
           map.set(key, {
             key,
+            id: m.id,
             stage: m.stage,
             kickoff: m.kickoff,
             slot: m.slot,
@@ -718,9 +769,9 @@ export default function App() {
                 {fetchMs > 0 && ` · ${fetchMs}ms`}
               </span>
             )}
-            <button type="button" className={`fetch-btn ${loading ? 'loading' : ''}`} onClick={refresh} disabled={loading}>
-              <span className="fetch-icon">{loading ? '⏳' : '🔄'}</span>
-              {loading ? 'Refreshing…' : 'Refresh'}
+            <button type="button" className={`fetch-btn ${loading || dynamicLoading ? 'loading' : ''}`} onClick={handleRefresh} disabled={loading || dynamicLoading}>
+              <span className="fetch-icon">{loading || dynamicLoading ? '⏳' : '🔄'}</span>
+              {loading ? 'Fetching…' : dynamicLoading ? 'Analyzing…' : 'Refresh'}
             </button>
           </div>
         </div>
@@ -835,9 +886,9 @@ export default function App() {
 
       <main>
         {tab === 'schedule' && (() => {
-          // Group fixtures by date
+          // Group fixtures by date (using local time, not UTC)
           const fixturesByDate = filteredFixtures.reduce((acc, g) => {
-            const matchDate = g.kickoff.split('T')[0];
+            const matchDate = localDateKey(g.kickoff);
             if (!acc[matchDate]) acc[matchDate] = [];
             acc[matchDate].push(g);
             return acc;
@@ -906,6 +957,7 @@ export default function App() {
                           {matches.map((g) => {
                             const actual = lookup(g);
                             const aiPred = getPrediction(g.teamA, g.teamB);
+                            const dynFactors = getFactors(g.id);
                             return (
                               <SlotCard
                                 key={g.key}
@@ -914,6 +966,7 @@ export default function App() {
                                 now={now}
                                 actual={actual}
                                 aiPrediction={aiPred}
+                                dynamicFactors={dynFactors}
                               />
                             );
                           })}
