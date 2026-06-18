@@ -565,7 +565,7 @@ export default function App() {
   const [location, setLocation] = useState('all');
   const [scoreFilter, setScoreFilter] = useState('all');
   const [factorFilter, setFactorFilter] = useState<'all' | 'worked' | 'failed' | string>('all');
-  const [collapsedDates, setCollapsedDates] = useState<Set<string>>(new Set());
+  const [collapsedDates, setCollapsedDates] = useState<Set<string>>(() => new Set(ALL_DATES));
   const now = useNow();
   const { byId, byTeams, loading, error, lastFetchedAt, fetchMs, refresh, hasData } = useEspnResults();
   const { bets, summary, error: betsError, addBet, settleBet, deleteBet } = useBets();
@@ -700,9 +700,6 @@ export default function App() {
     return result;
   }, [fixtures, scoreFilter, factorFilter, byId, byTeams, getPrediction]);
 
-  const groupCount = filteredFixtures.filter((f) => f.stage === 'group').length;
-  const knockoutCount = filteredFixtures.filter((f) => f.stage !== 'group').length;
-  const liveCount = filteredFixtures.filter((f) => getTiming(f) === 'live').length;
   const scoredCount = accuracy.reduce((s, a) => s + a.total, 0);
 
   return (
@@ -721,15 +718,16 @@ export default function App() {
                 {fetchMs > 0 && ` · ${fetchMs}ms`}
               </span>
             )}
-            <button type="button" className="fetch-btn" onClick={refresh} disabled={loading}>
-              {loading ? 'Fetching…' : 'Fetch results'}
+            <button type="button" className={`fetch-btn ${loading ? 'loading' : ''}`} onClick={refresh} disabled={loading}>
+              <span className="fetch-icon">{loading ? '⏳' : '🔄'}</span>
+              {loading ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
         </div>
 
         {error && <p className="fetch-err">{error}</p>}
         {!hasData && !loading && !error && (
-          <p className="fetch-hint">Click Fetch results to load live scores from ESPN</p>
+          <p className="fetch-hint">Click Refresh to load live scores from ESPN</p>
         )}
 
         <nav className="nav-tabs" aria-label="Sections">
@@ -864,12 +862,6 @@ export default function App() {
             <>
               {scoredCount > 0 && <AccuracyBoard scores={accuracy} />}
               <div className="schedule-header">
-                <p className="meta">
-                  {groupCount} group · {knockoutCount} knockout
-                  {liveCount > 0 && ` · ${liveCount} live`}
-                  {scoredCount > 0 && ` · ✓ ${scoredCount} completed`}
-                  {` · ${groupCount + knockoutCount - scoredCount} remaining`}
-                </p>
                 <div className="collapse-controls">
                   <button type="button" className="collapse-btn" onClick={expandAll}>Expand All</button>
                   <button type="button" className="collapse-btn" onClick={collapseAll}>Collapse All</button>
@@ -1014,7 +1006,7 @@ export default function App() {
               <p className="empty">
                 {hasData
                   ? 'No completed matches yet — check back after kickoff'
-                  : 'Click Fetch results to load live scores from ESPN'}
+                  : 'Click Refresh to load live scores from ESPN'}
               </p>
             )}
           </>
@@ -1062,21 +1054,17 @@ export default function App() {
         {tab === 'bets' && (
           <div className="bets-page">
             <div className="bets-summary">
-              <div className={`summary-card ${summary.netProfit >= 0 ? 'profit' : 'loss'}`}>
-                <span className="summary-label">Net Profit/Loss</span>
-                <span className="summary-value">${summary.netProfit.toFixed(2)}</span>
-              </div>
-              <div className="summary-card">
-                <span className="summary-label">Total Staked</span>
-                <span className="summary-value">${summary.totalBet.toFixed(2)}</span>
-              </div>
               <div className="summary-card won">
-                <span className="summary-label">Total Won</span>
+                <span className="summary-label">Won</span>
                 <span className="summary-value">${summary.totalWon.toFixed(2)}</span>
               </div>
               <div className="summary-card lost">
-                <span className="summary-label">Total Lost</span>
+                <span className="summary-label">Lost</span>
                 <span className="summary-value">${summary.totalLost.toFixed(2)}</span>
+              </div>
+              <div className={`summary-card ${summary.netProfit >= 0 ? 'profit' : 'loss'}`}>
+                <span className="summary-label">Net</span>
+                <span className="summary-value">{summary.netProfit >= 0 ? '+' : ''}${summary.netProfit.toFixed(2)}</span>
               </div>
             </div>
 
@@ -1307,14 +1295,6 @@ export default function App() {
                   <option key={md.id} value={md.id}>{md.name}</option>
                 ))}
               </select>
-              <button className="btn-refresh" onClick={refresh} disabled={loading}>
-                {loading ? 'Refreshing...' : '🔄 Refresh to Current'}
-              </button>
-              {lastFetchedAt && (
-                <span className="fetch-meta-inline">
-                  Updated {new Date(lastFetchedAt).toLocaleTimeString()}
-                </span>
-              )}
             </div>
 
             {/* Tournament Stats */}
