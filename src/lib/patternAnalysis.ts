@@ -181,49 +181,43 @@ export interface CompletedMatch {
   hostCountry: 'USA' | 'Mexico' | 'Canada' | 'Other';
 }
 
-export interface PatternBucket {
-  key: string;
-  label: string;
-  description: string;
-  matches: number;
-  avgGoals: number;
-  deltaFromAvg: number;
-  trend: Trend;
-}
-
 export interface UpcomingPatternPick {
   id: string;
   kickoff: string;
   teamA: string;
   teamB: string;
   venue?: string;
+  timeSlot: TimeSlot;
   predictedGoals: number;
   entertainmentScore: number;
   signals: string[];
 }
 
-export interface PatternTakeaway {
-  category: string;
-  icon: string;
-  signal: string;
-  finding: string;
-  metric: string;
-  delta: number | null;
+export interface TimeSlotRating {
+  slot: TimeSlot;
+  shortLabel: string;
+  window: string;
+  completedMatches: number;
+  scheduledMatches: number;
+  avgGoals: number | null;
+  avgViewership: number;
+  rating: number;
   trend: Trend;
-  sample: number;
+}
+
+export interface CalendarCompare {
+  weekend: { completed: number; avgGoals: number | null; avgViewership: number };
+  weekday: { completed: number; avgGoals: number | null; avgViewership: number };
+  verdict: string;
+  goalsLeader: 'weekend' | 'weekday' | 'even';
+  viewLeader: 'weekend' | 'weekday' | 'even';
 }
 
 export interface PatternAnalysis {
   sampleSize: number;
   tournamentAvgGoals: number;
-  timeSlots: PatternBucket[];
-  viewership: PatternBucket[];
-  weekend: PatternBucket[];
-  rivalries: PatternBucket[];
-  hostNation: PatternBucket[];
-  rankingGap: PatternBucket[];
-  regions: PatternBucket[];
-  takeaways: PatternTakeaway[];
+  timeSlotRatings: TimeSlotRating[];
+  calendarCompare: CalendarCompare;
   upcoming: UpcomingPatternPick[];
 }
 
@@ -264,6 +258,24 @@ export function timeSlotLabel(slot: TimeSlot): string {
   }[slot];
 }
 
+export function timeSlotShortLabel(slot: TimeSlot): string {
+  return {
+    early: 'Early',
+    afternoon: 'Afternoon',
+    primetime: 'Primetime',
+    late: 'Late night',
+  }[slot];
+}
+
+export function timeSlotWindow(slot: TimeSlot): string {
+  return {
+    early: 'Before 2p ET',
+    afternoon: '2–6p ET',
+    primetime: '6–10p ET',
+    late: '10p+ ET',
+  }[slot];
+}
+
 function isWeekendKickoff(kickoff: string): boolean {
   const day = new Date(kickoff).getUTCDay();
   return day === 0 || day === 6;
@@ -296,27 +308,6 @@ function bucketTrend(avg: number, baseline: number): Trend {
   if (avg >= baseline + 0.35) return 'high';
   if (avg <= baseline - 0.35) return 'low';
   return 'avg';
-}
-
-function makeBucket(
-  key: string,
-  label: string,
-  description: string,
-  matches: CompletedMatch[],
-  baseline: number,
-): PatternBucket {
-  const avgGoals = matches.length
-    ? matches.reduce((s, m) => s + m.totalGoals, 0) / matches.length
-    : 0;
-  return {
-    key,
-    label,
-    description,
-    matches: matches.length,
-    avgGoals: Math.round(avgGoals * 100) / 100,
-    deltaFromAvg: Math.round((avgGoals - baseline) * 100) / 100,
-    trend: bucketTrend(avgGoals, baseline),
-  };
 }
 
 function buildCompleted(
@@ -352,143 +343,6 @@ function buildCompleted(
   }
 
   return out;
-}
-
-function buildTakeaways(
-  baseline: number,
-  timeSlots: PatternBucket[],
-  viewership: PatternBucket[],
-  weekend: PatternBucket[],
-  rivalries: PatternBucket[],
-  hostNation: PatternBucket[],
-  rankingGapBuckets: PatternBucket[],
-): PatternTakeaway[] {
-  const takeaways: PatternTakeaway[] = [];
-  const push = (
-    category: string,
-    icon: string,
-    signal: string,
-    finding: string,
-    bucket: PatternBucket | undefined,
-  ) => {
-    if (!bucket) return;
-    takeaways.push({
-      category,
-      icon,
-      signal,
-      finding,
-      metric: bucket.matches > 0 ? `${bucket.avgGoals} gpg` : '—',
-      delta: bucket.matches > 0 ? bucket.deltaFromAvg : null,
-      trend: bucket.trend,
-      sample: bucket.matches,
-    });
-  };
-
-  const best = (buckets: PatternBucket[]) =>
-    [...buckets].filter((b) => b.matches >= 2).sort((a, b) => b.avgGoals - a.avgGoals)[0];
-  const worst = (buckets: PatternBucket[]) =>
-    [...buckets].filter((b) => b.matches >= 2).sort((a, b) => a.avgGoals - b.avgGoals)[0];
-
-  const topSlot = best(timeSlots);
-  const lowSlot = worst(timeSlots);
-  if (topSlot && topSlot.trend === 'high') {
-    push('Time slot', '🕐', topSlot.label, 'Highest-scoring kickoff window so far — primetime energy may lift intensity.', topSlot);
-  }
-  if (lowSlot && lowSlot.trend === 'low' && lowSlot.key !== topSlot?.key) {
-    push('Time slot', '🌙', lowSlot.label, 'Quietest window in the sample — fewer goals per match in this slot.', lowSlot);
-  }
-
-  const mega = viewership.find((v) => v.key === 'mega');
-  const standard = viewership.find((v) => v.key === 'standard');
-  if (mega && mega.matches >= 1) {
-    push(
-      'Viewership',
-      '📺',
-      'Mega-draw fixtures',
-      mega.trend === 'high'
-        ? 'Star nations (Brazil, Argentina, USA, Mexico…) tracking above tournament average.'
-        : `Mega-draw games at ${mega.avgGoals} gpg${standard && standard.matches >= 2 ? ` vs ${standard.avgGoals} for standard fixtures` : ''}.`,
-      mega,
-    );
-  }
-
-  const rivalryYes = rivalries.find((r) => r.key === 'yes');
-  const rivalryNo = rivalries.find((r) => r.key === 'no');
-  if (rivalryYes && rivalryYes.matches >= 1) {
-    push(
-      'Rivalry',
-      '⚔️',
-      'Named derbies',
-      rivalryYes.avgGoals > (rivalryNo?.avgGoals ?? 0)
-        ? 'Historic rivalries outpacing regular group games on goals.'
-        : 'Rivalry tag alone hasn\'t meant more goals — form may matter more.',
-      rivalryYes,
-    );
-  }
-
-  const hostYes = hostNation.find((h) => h.key === 'yes');
-  if (hostYes && hostYes.matches >= 2) {
-    push(
-      'Host nation',
-      '🏠',
-      'USA / Mexico / Canada',
-      hostYes.trend !== 'low'
-        ? 'Co-host involvement correlates with lively scorelines in this sample.'
-        : 'Host-nation matches haven\'t been the highest-scoring yet.',
-      hostYes,
-    );
-  }
-
-  const weekendBucket = weekend.find((w) => w.key === 'weekend');
-  const weekdayBucket = weekend.find((w) => w.key === 'weekday');
-  if (weekendBucket && weekdayBucket && weekendBucket.matches >= 2 && weekdayBucket.matches >= 2) {
-    const winner = weekendBucket.avgGoals >= weekdayBucket.avgGoals ? weekendBucket : weekdayBucket;
-    push(
-      'Calendar',
-      '📅',
-      winner.key === 'weekend' ? 'Weekend kickoffs' : 'Weekday kickoffs',
-      winner.key === 'weekend'
-        ? 'Weekends beating weekdays on goals — rest days and stacked primetime help.'
-        : 'Weekdays surprisingly more open than weekends in this sample.',
-      winner,
-    );
-  }
-
-  const closeGames = rankingGapBuckets.find((b) => b.key === 'close');
-  const mismatch = rankingGapBuckets.find((b) => b.key === 'mismatch');
-  if (closeGames && mismatch && closeGames.matches >= 2 && mismatch.matches >= 2) {
-    const winner = closeGames.avgGoals >= mismatch.avgGoals ? closeGames : mismatch;
-    push(
-      'Rankings',
-      '📊',
-      winner.label,
-      winner.key === 'close'
-        ? 'Evenly matched sides (≤8 FIFA rank gap) producing the most entertainment.'
-        : 'Ranking mismatches yielding more goals — favorites may run up scores.',
-      winner,
-    );
-  }
-
-  if (takeaways.length === 0) {
-    takeaways.push({
-      category: baseline > 0 ? 'Sample' : 'Waiting',
-      icon: baseline > 0 ? '🔄' : '⏳',
-      signal: baseline > 0 ? 'Early tournament' : 'No results yet',
-      finding: sampleHint(baseline),
-      metric: baseline > 0 ? `${baseline} gpg` : '—',
-      delta: null,
-      trend: 'avg',
-      sample: 0,
-    });
-  }
-
-  return takeaways;
-}
-
-function sampleHint(baseline: number): string {
-  return baseline > 0
-    ? 'Patterns sharpen as more group matches finish — refresh after each matchday.'
-    : 'No completed matches yet. Patterns will appear once results load from ESPN.';
 }
 
 function predictUpcoming(
@@ -586,6 +440,7 @@ function predictUpcoming(
       teamA: fix.teamA,
       teamB: fix.teamB,
       venue: fix.venue,
+      timeSlot: slot,
       predictedGoals: Math.round(predicted * 10) / 10,
       entertainmentScore,
       signals: signals.length ? signals : ['Baseline expectation'],
@@ -594,7 +449,117 @@ function predictUpcoming(
 
   return upcoming
     .sort((a, b) => b.entertainmentScore - a.entertainmentScore)
-    .slice(0, 12);
+    .slice(0, 8);
+}
+
+function avgViewershipForFixtures(fixtures: { teamA: string; teamB: string }[]): number {
+  if (fixtures.length === 0) return 0;
+  const sum = fixtures.reduce((s, f) => s + viewershipScore(f.teamA, f.teamB).score, 0);
+  return Math.round((sum / fixtures.length) * 10) / 10;
+}
+
+function buildTimeSlotRatings(completed: CompletedMatch[], baseline: number): TimeSlotRating[] {
+  const slots: TimeSlot[] = ['early', 'afternoon', 'primetime', 'late'];
+
+  const scheduledBySlot = new Map<TimeSlot, typeof GROUP_FIXTURES>();
+  for (const slot of slots) scheduledBySlot.set(slot, []);
+  for (const fix of GROUP_FIXTURES) {
+    scheduledBySlot.get(getTimeSlot(fix.kickoff))!.push(fix);
+  }
+
+  const maxView = Math.max(
+    ...slots.map((slot) => avgViewershipForFixtures(scheduledBySlot.get(slot)!)),
+    0.1,
+  );
+
+  return slots
+    .map((slot) => {
+      const done = completed.filter((m) => m.timeSlot === slot);
+      const scheduled = scheduledBySlot.get(slot)!;
+      const avgGoals = done.length
+        ? Math.round((done.reduce((s, m) => s + m.totalGoals, 0) / done.length) * 100) / 100
+        : null;
+      const avgViewership = avgViewershipForFixtures(scheduled);
+      const goalNorm = avgGoals != null && baseline > 0 ? Math.min(1, avgGoals / (baseline * 1.4)) : 0.5;
+      const viewNorm = avgViewership / maxView;
+      const rating = Math.round(
+        (done.length > 0 ? goalNorm * 55 + viewNorm * 45 : viewNorm * 100),
+      );
+
+      return {
+        slot,
+        shortLabel: timeSlotShortLabel(slot),
+        window: timeSlotWindow(slot),
+        completedMatches: done.length,
+        scheduledMatches: scheduled.length,
+        avgGoals,
+        avgViewership,
+        rating,
+        trend: avgGoals != null ? bucketTrend(avgGoals, baseline) : (viewNorm >= 0.85 ? 'high' : viewNorm <= 0.5 ? 'low' : 'avg'),
+      };
+    })
+    .sort((a, b) => b.rating - a.rating);
+}
+
+function buildCalendarCompare(completed: CompletedMatch[]): CalendarCompare {
+  const weekendDone = completed.filter((m) => m.isWeekend);
+  const weekdayDone = completed.filter((m) => !m.isWeekend);
+
+  const weekendScheduled = GROUP_FIXTURES.filter((f) => isWeekendKickoff(f.kickoff));
+  const weekdayScheduled = GROUP_FIXTURES.filter((f) => !isWeekendKickoff(f.kickoff));
+
+  const wGoals = weekendDone.length
+    ? weekendDone.reduce((s, m) => s + m.totalGoals, 0) / weekendDone.length
+    : null;
+  const dGoals = weekdayDone.length
+    ? weekdayDone.reduce((s, m) => s + m.totalGoals, 0) / weekdayDone.length
+    : null;
+  const wView = avgViewershipForFixtures(weekendScheduled);
+  const dView = avgViewershipForFixtures(weekdayScheduled);
+
+  const goalsLeader =
+    wGoals == null || dGoals == null
+      ? 'even'
+      : wGoals > dGoals + 0.15
+        ? 'weekend'
+        : dGoals > wGoals + 0.15
+          ? 'weekday'
+          : 'even';
+  const viewLeader =
+    wView > dView + 0.2 ? 'weekend' : dView > wView + 0.2 ? 'weekday' : 'even';
+
+  let verdict = 'Not enough finished matches yet — ratings use scheduled TV-draw strength.';
+  if (weekendDone.length >= 2 && weekdayDone.length >= 2) {
+    if (goalsLeader === 'weekend' && viewLeader === 'weekend') {
+      verdict = 'Weekends win on both goals and TV draw — best window for must-watch football.';
+    } else if (goalsLeader === 'weekday' && viewLeader === 'weekday') {
+      verdict = 'Weekdays outperform weekends on goals and star-power fixtures so far.';
+    } else if (goalsLeader === 'weekend') {
+      verdict = 'Weekends score more goals; weekdays still carry strong headline teams.';
+    } else if (goalsLeader === 'weekday') {
+      verdict = 'Weekdays are more open; weekends still pull bigger TV audiences.';
+    } else if (viewLeader === 'weekend') {
+      verdict = 'Goal counts are even, but weekends stack the most marquee matchups.';
+    } else {
+      verdict = 'Weekend and weekday patterns are neck-and-neck in this sample.';
+    }
+  }
+
+  return {
+    weekend: {
+      completed: weekendDone.length,
+      avgGoals: wGoals != null ? Math.round(wGoals * 100) / 100 : null,
+      avgViewership: wView,
+    },
+    weekday: {
+      completed: weekdayDone.length,
+      avgGoals: dGoals != null ? Math.round(dGoals * 100) / 100 : null,
+      avgViewership: dView,
+    },
+    verdict,
+    goalsLeader,
+    viewLeader,
+  };
 }
 
 export function analyzePatterns(
@@ -607,91 +572,15 @@ export function analyzePatterns(
     ? Math.round((completed.reduce((s, m) => s + m.totalGoals, 0) / sampleSize) * 100) / 100
     : 0;
 
-  const timeSlots: PatternBucket[] = (['early', 'afternoon', 'primetime', 'late'] as TimeSlot[]).map(
-    (slot) =>
-      makeBucket(
-        slot,
-        timeSlotLabel(slot),
-        'Kickoff window in US Eastern Time (TV primetime proxy)',
-        completed.filter((m) => m.timeSlot === slot),
-        tournamentAvgGoals,
-      ),
-  );
-
-  const viewership: PatternBucket[] = [
-    makeBucket(
-      'mega',
-      'Mega-draw teams',
-      'At least one of Brazil, Argentina, France, England, Germany, Spain, Portugal, Netherlands, USA, Mexico',
-      completed.filter((m) => m.megaDrawCount >= 1),
-      tournamentAvgGoals,
-    ),
-    makeBucket(
-      'double',
-      'Double headline',
-      'Both teams are mega-draw nations',
-      completed.filter((m) => m.megaDrawCount >= 2),
-      tournamentAvgGoals,
-    ),
-    makeBucket(
-      'standard',
-      'Standard fixture',
-      'Neither team in the mega-draw set',
-      completed.filter((m) => m.megaDrawCount === 0),
-      tournamentAvgGoals,
-    ),
-  ];
-
-  const weekend: PatternBucket[] = [
-    makeBucket('weekend', 'Weekend', 'Saturday or Sunday kickoff', completed.filter((m) => m.isWeekend), tournamentAvgGoals),
-    makeBucket('weekday', 'Weekday', 'Monday–Friday kickoff', completed.filter((m) => !m.isWeekend), tournamentAvgGoals),
-  ];
-
-  const rivalries: PatternBucket[] = [
-    makeBucket('yes', 'Named rivalry', 'Classic derby or historic WC matchup', completed.filter((m) => m.isRivalry), tournamentAvgGoals),
-    makeBucket('no', 'Non-rivalry', 'Regular group fixture', completed.filter((m) => !m.isRivalry), tournamentAvgGoals),
-  ];
-
-  const hostNation: PatternBucket[] = [
-    makeBucket('yes', 'Host nation involved', 'USA, Mexico, or Canada playing', completed.filter((m) => m.hasHostNation), tournamentAvgGoals),
-    makeBucket('no', 'No host nation', 'Neither co-host on the pitch', completed.filter((m) => !m.hasHostNation), tournamentAvgGoals),
-  ];
-
-  const rankingGapBuckets: PatternBucket[] = [
-    makeBucket('close', 'Even match (≤8 rank gap)', 'Top-25 sides close on paper', completed.filter((m) => m.rankingGap <= 8), tournamentAvgGoals),
-    makeBucket('mid', 'Moderate gap (9–19)', 'Clear favorite but not a mismatch', completed.filter((m) => m.rankingGap >= 9 && m.rankingGap <= 19), tournamentAvgGoals),
-    makeBucket('mismatch', 'Big gap (20+)', 'Heavy favorite vs underdog', completed.filter((m) => m.rankingGap >= 20), tournamentAvgGoals),
-  ];
-
-  const regions: PatternBucket[] = [
-    makeBucket('USA', 'USA venues', 'Matches in the United States', completed.filter((m) => m.hostCountry === 'USA'), tournamentAvgGoals),
-    makeBucket('Mexico', 'Mexico venues', 'Matches in Mexico', completed.filter((m) => m.hostCountry === 'Mexico'), tournamentAvgGoals),
-    makeBucket('Canada', 'Canada venues', 'Matches in Canada', completed.filter((m) => m.hostCountry === 'Canada'), tournamentAvgGoals),
-  ];
-
-  const takeaways = buildTakeaways(
-    tournamentAvgGoals,
-    timeSlots,
-    viewership,
-    weekend,
-    rivalries,
-    hostNation,
-    rankingGapBuckets,
-  );
-
+  const timeSlotRatings = buildTimeSlotRatings(completed, tournamentAvgGoals);
+  const calendarCompare = buildCalendarCompare(completed);
   const upcoming = predictUpcoming(completed, byId, byTeams, tournamentAvgGoals);
 
   return {
     sampleSize,
     tournamentAvgGoals,
-    timeSlots,
-    viewership,
-    weekend,
-    rivalries,
-    hostNation,
-    rankingGap: rankingGapBuckets,
-    regions,
-    takeaways,
+    timeSlotRatings,
+    calendarCompare,
     upcoming,
   };
 }

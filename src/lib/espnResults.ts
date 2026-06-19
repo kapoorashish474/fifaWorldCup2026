@@ -176,6 +176,23 @@ export function lookupResult(
   return byTeams.get(teamsKey(teamA, teamB));
 }
 
+/** Parse "2–1" or "2-1" into total goals scored in the match. */
+export function totalGoalsFromScore(score: string): number {
+  const parts = score.split(/[–-]/).map((s) => parseInt(s.trim(), 10));
+  if (parts.length !== 2 || parts.some((n) => Number.isNaN(n))) return 0;
+  return parts[0] + parts[1];
+}
+
+/** Score string with home/away order aligned to fixture teamA vs teamB. */
+export function scoreForFixture(teamA: string, teamB: string, result: EspnResult): string {
+  if (result.teamA === teamA && result.teamB === teamB) return result.score;
+  if (result.teamA === teamB && result.teamB === teamA) {
+    const [a, b] = result.score.split(/[–-]/);
+    return `${b}–${a}`;
+  }
+  return result.score;
+}
+
 export function predictionCorrect(predictedWinner: string, actual: EspnResult): boolean | null {
   if (actual.state !== 'post') return null;
   if (!actual.winner) return false;

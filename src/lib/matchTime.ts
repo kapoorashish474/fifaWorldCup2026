@@ -22,6 +22,22 @@ export function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
+/** Eastern Time kickoff key + label for exact-time filters (e.g. "21:00", "21:00 ET"). */
+export function kickoffTimeET(iso: string): { key: string; label: string } {
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+  let hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
+  const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
+  if (hour === '24') hour = '00';
+  const key = `${hour}:${minute}`;
+  return { key, label: `${key} ET` };
+}
+
 export function timingFromClock(kickoff: string, now = Date.now()): MatchTiming {
   const start = Date.parse(kickoff);
   if (Number.isNaN(start)) return 'upcoming';

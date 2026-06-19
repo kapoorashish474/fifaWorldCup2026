@@ -19,13 +19,16 @@ import {
   lookupResult,
   predictionCorrect,
   resolveTiming,
+  scoreForFixture,
   teamsKey,
+  totalGoalsFromScore,
   type EspnResult,
   type ModelAccuracy,
 } from './lib/espnResults';
 import {
   fmtCountdown,
   fmtKickoff,
+  kickoffTimeET,
   localDateKey,
   msUntilKickoff,
   type MatchTiming,
@@ -39,7 +42,16 @@ import type { MatchDynamicFactors } from './lib/dynamicFactors';
 import { useLearning } from './lib/useLearning';
 import { FIFA_RANKINGS, WORLD_CUP_TITLES, RECENT_FORM } from './lib/predictionEngine';
 import { Dropdown, type DropdownOption } from './components/Dropdown';
-import { analyzePatterns, FAMOUS_RIVALRIES, getTimeSlot, type PatternBucket, type TimeSlot } from './lib/patternAnalysis';
+import { getTimeSlot, type TimeSlot } from './lib/patternAnalysis';
+import { GoalsBarChart } from './components/GoalsBarChart';
+
+const TIME_SLOT_OPTIONS: DropdownOption[] = [
+  { value: 'all', label: 'All times', icon: '🕐' },
+  { value: 'early', label: 'Early · before 2 PM ET', icon: '🌅' },
+  { value: 'afternoon', label: 'Afternoon · 2–6 PM ET', icon: '☀️' },
+  { value: 'primetime', label: 'Primetime · 6–10 PM ET', icon: '📺' },
+  { value: 'late', label: 'Late night · 10 PM+ ET', icon: '🌙' },
+];
 
 // Classic rivalries
 const RIVALRIES: Record<string, string> = {
@@ -86,52 +98,6 @@ function TeamFlag({ team, size = 24 }: { team: string; size?: number }) {
       className="team-flag"
       style={{ width: size, height: size * 0.67, objectFit: 'cover', borderRadius: 2 }}
     />
-  );
-}
-
-function PatternBucketGrid({
-  buckets,
-  baseline,
-  compact = false,
-}: {
-  buckets: PatternBucket[];
-  baseline: number;
-  compact?: boolean;
-}) {
-  return (
-    <div className={`pattern-buckets ${compact ? 'compact' : ''}`}>
-      {buckets.map((b) => (
-        <div key={b.key} className={`pattern-bucket trend-${b.trend}`}>
-          <div className="pattern-bucket-head">
-            <span className="pattern-bucket-label">{b.label}</span>
-            <span className={`pattern-trend-badge ${b.trend}`}>
-              {b.trend === 'high' ? '↑ High' : b.trend === 'low' ? '↓ Low' : '≈ Avg'}
-            </span>
-          </div>
-          {!compact && <p className="pattern-bucket-desc">{b.description}</p>}
-          <div className="pattern-bucket-stats">
-            <span className="pattern-avg">{b.matches > 0 ? b.avgGoals : '—'}</span>
-            <span className="pattern-avg-label">goals / match</span>
-          </div>
-          <div className="pattern-bucket-foot">
-            <span>{b.matches} match{b.matches !== 1 ? 'es' : ''}</span>
-            {b.matches > 0 && baseline > 0 && (
-              <span className={b.deltaFromAvg >= 0 ? 'delta-pos' : 'delta-neg'}>
-                {b.deltaFromAvg >= 0 ? '+' : ''}{b.deltaFromAvg} vs avg
-              </span>
-            )}
-          </div>
-          {b.matches > 0 && baseline > 0 && (
-            <div className="pattern-bar-track">
-              <div
-                className="pattern-bar-fill"
-                style={{ width: `${Math.min(100, (b.avgGoals / (baseline * 2)) * 100)}%` }}
-              />
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -646,6 +612,8 @@ export default function App() {
   const [team, setTeam] = useState('');
   const [location, setLocation] = useState('all');
   const [timeFilter, setTimeFilter] = useState<'all' | TimeSlot>('all');
+  const [patternTimeFilter, setPatternTimeFilter] = useState('all');
+  const [patternTeamFilter, setPatternTeamFilter] = useState('all');
   const [scoreFilter, setScoreFilter] = useState('all');
   const [factorFilter, setFactorFilter] = useState<'all' | 'worked' | 'failed' | string>('all');
   const [collapsedDates, setCollapsedDates] = useState<Set<string>>(() => new Set(ALL_DATES));
@@ -802,10 +770,97 @@ export default function App() {
 
   const scoredCount = accuracy.reduce((s, a) => s + a.total, 0);
 
-  const patternAnalysis = useMemo(
-    () => analyzePatterns(byId, byTeams),
-    [byId, byTeams],
-  );
+  const teamGroupMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const fix of GROUP_FIXTURES) {
+      map.set(fix.teamA, fix.group);
+      map.set(fix.teamB, fix.group);
+    }
+    return map;
+  }, []);
+
+  const matchGoalBars = useMemo(() => {
+    return GROUP_FIXTURES
+      .map((fix) => {
+        const result = lookupResult(fix.id, fix.teamA, fix.teamB, byId, byTeams);
+        if (!result || result.state !== 'post') return null;
+        const score = scoreForFixture(fix.teamA, fix.teamB, result);
+        return {
+          id: fix.id,
+          label: `${fix.teamA} vs ${fix.teamB}`,
+          score,
+          goals: totalGoalsFromScore(score),
+          date: fmtKickoff(fix.kickoff),
+          dateLabel: new Date(fix.kickoff).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+          }),
+          kickoff: fix.kickoff,
+          timeKey: kickoffTimeET(fix.kickoff).key,
+          teamA: fix.teamA,
+          teamB: fix.teamB,
+          group: fix.group,
+        };
+      })
+      .filter((m): m is NonNullable<typeof m> => m != null)
+      .sort((a, b) => a.kickoff.localeCompare(b.kickoff));
+  }, [byId, byTeams]);
+
+  const patternTimeOptions = useMemo((): DropdownOption[] => {
+    const times = new Map<string, { label: string; count: number }>();
+    for (const m of matchGoalBars) {
+      const { key, label } = kickoffTimeET(m.kickoff);
+      const entry = times.get(key) ?? { label, count: 0 };
+      entry.count++;
+      times.set(key, entry);
+    }
+    return [
+      { value: 'all', label: 'All times', icon: '🕐' },
+      ...[...times.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, { label, count }]) => ({
+          value: key,
+          label,
+          badge: String(count),
+          icon: '🕐',
+        })),
+    ];
+  }, [matchGoalBars]);
+
+  const patternTeamOptions = useMemo((): DropdownOption[] => {
+    const counts = new Map<string, number>();
+    for (const m of matchGoalBars) {
+      counts.set(m.teamA, (counts.get(m.teamA) ?? 0) + 1);
+      counts.set(m.teamB, (counts.get(m.teamB) ?? 0) + 1);
+    }
+    const teams = [...counts.keys()].sort((a, b) => {
+      const ga = teamGroupMap.get(a) ?? 'Z';
+      const gb = teamGroupMap.get(b) ?? 'Z';
+      return ga.localeCompare(gb) || a.localeCompare(b);
+    });
+    return [
+      { value: 'all', label: 'All teams', icon: '🌍' },
+      ...teams.map((t) => ({
+        value: t,
+        label: t,
+        group: `Group ${teamGroupMap.get(t) ?? '?'}`,
+        badge: String(counts.get(t)!),
+      })),
+    ];
+  }, [matchGoalBars, teamGroupMap]);
+
+  const filteredMatchGoalBars = useMemo(() => {
+    let result = matchGoalBars;
+    if (patternTimeFilter !== 'all') {
+      result = result.filter((m) => m.timeKey === patternTimeFilter);
+    }
+    if (patternTeamFilter !== 'all') {
+      result = result.filter(
+        (m) => m.teamA === patternTeamFilter || m.teamB === patternTeamFilter,
+      );
+    }
+    return result;
+  }, [matchGoalBars, patternTimeFilter, patternTeamFilter]);
 
   return (
     <div className="page">
@@ -895,13 +950,7 @@ export default function App() {
             })),
           ];
 
-          const timeOptions: DropdownOption[] = [
-            { value: 'all', label: 'All times', icon: '🕐' },
-            { value: 'early', label: 'Early · before 2 PM ET', icon: '🌅' },
-            { value: 'afternoon', label: 'Afternoon · 2–6 PM ET', icon: '☀️' },
-            { value: 'primetime', label: 'Primetime · 6–10 PM ET', icon: '📺' },
-            { value: 'late', label: 'Late night · 10 PM+ ET', icon: '🌙' },
-          ];
+          const timeOptions = TIME_SLOT_OPTIONS;
 
           const scoreOptions: DropdownOption[] = [
             { value: 'all', label: 'All scores', icon: '⚽' },
@@ -1544,203 +1593,36 @@ export default function App() {
 
         {tab === 'pattern' && (
           <div className="pattern-page">
-            <div className="stats-header">
-              <h2>📈 Goal Pattern Lab</h2>
-              <p className="meta">
-                {patternAnalysis.sampleSize > 0
-                  ? `Analyzing ${patternAnalysis.sampleSize} completed matches · ${patternAnalysis.tournamentAvgGoals} goals per game`
-                  : 'Refresh ESPN data to start detecting patterns'}
-              </p>
+            <div className="stats-header stats-header-compact pattern-header">
+              <h2>⚽ Goals by Match</h2>
+              <div className="pattern-filters">
+                <Dropdown
+                  value={patternTimeFilter}
+                  options={patternTimeOptions}
+                  onChange={setPatternTimeFilter}
+                  placeholder="Kickoff time"
+                  className="dropdown-time"
+                />
+                <Dropdown
+                  value={patternTeamFilter}
+                  options={patternTeamOptions}
+                  onChange={setPatternTeamFilter}
+                  placeholder="Team"
+                  className="dropdown-team"
+                  searchable
+                />
+              </div>
             </div>
-
-            <section className="stats-section pattern-insights">
-              <div className="section-header">
-                <h3>🔍 What we&apos;re seeing</h3>
-                <span className="section-subtitle">Live pattern signals</span>
-              </div>
-              <div className="pattern-insights-table-wrap">
-                <table className="pattern-insights-table">
-                  <thead>
-                    <tr>
-                      <th>Category</th>
-                      <th>Signal</th>
-                      <th>Finding</th>
-                      <th>Goals</th>
-                      <th>vs Avg</th>
-                      <th>Trend</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {patternAnalysis.takeaways.map((row, i) => (
-                      <tr key={i} className={`insight-row trend-${row.trend}`}>
-                        <td className="insight-category">
-                          <span className="insight-icon">{row.icon}</span>
-                          {row.category}
-                        </td>
-                        <td className="insight-signal">{row.signal}</td>
-                        <td className="insight-finding">{row.finding}</td>
-                        <td className="insight-metric">
-                          <span className="metric-pill">{row.metric}</span>
-                          {row.sample > 0 && (
-                            <span className="sample-count">{row.sample} gp</span>
-                          )}
-                        </td>
-                        <td className="insight-delta">
-                          {row.delta != null ? (
-                            <span className={row.delta >= 0 ? 'delta-pos' : 'delta-neg'}>
-                              {row.delta >= 0 ? '+' : ''}{row.delta}
-                            </span>
-                          ) : '—'}
-                        </td>
-                        <td className="insight-trend">
-                          <span className={`pattern-trend-badge ${row.trend}`}>
-                            {row.trend === 'high' ? '↑ High' : row.trend === 'low' ? '↓ Low' : '≈ Avg'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <section className="stats-section stats-section-compact">
+              <GoalsBarChart
+                matches={filteredMatchGoalBars}
+                emptyMessage={
+                  matchGoalBars.length > 0
+                    ? 'No completed matches match these filters.'
+                    : undefined
+                }
+              />
             </section>
-
-            <section className="stats-section pattern-rivalries-section">
-              <div className="section-header">
-                <h3>⚔️ Famous FIFA rivalries</h3>
-                <span className="section-subtitle">
-                  {FAMOUS_RIVALRIES.filter((r) => r.wc2026).length} possible in WC 2026
-                </span>
-              </div>
-              <div className="rivalries-table-wrap">
-                <table className="rivalries-table">
-                  <thead>
-                    <tr>
-                      <th>Matchup</th>
-                      <th>Rivalry</th>
-                      <th>Region</th>
-                      <th>Story</th>
-                      <th>WC 2026</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {FAMOUS_RIVALRIES.map((r) => (
-                      <tr key={`${r.teamA}-${r.teamB}`} className={`rivalry-row intensity-${r.intensity} ${r.wc2026 ? 'in-tournament' : ''}`}>
-                        <td className="rivalry-matchup">
-                          <span className="rivalry-teams">
-                            <TeamFlag team={r.teamA} size={18} /> {r.teamA}
-                            <span className="vs">vs</span>
-                            <TeamFlag team={r.teamB} size={18} /> {r.teamB}
-                          </span>
-                        </td>
-                        <td className="rivalry-name">
-                          <strong>{r.name}</strong>
-                          <span className={`intensity-tag ${r.intensity}`}>{r.intensity}</span>
-                        </td>
-                        <td className="rivalry-region">{r.region}</td>
-                        <td className="rivalry-story">{r.story}</td>
-                        <td className="rivalry-wc">
-                          {r.wc2026 ? (
-                            <span className="wc-badge yes">Possible</span>
-                          ) : (
-                            <span className="wc-badge no">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <section className="stats-section">
-              <div className="section-header">
-                <h3>🕐 Time slot vs goals</h3>
-                <span className="section-subtitle">US Eastern kickoff (TV primetime proxy)</span>
-              </div>
-              <PatternBucketGrid buckets={patternAnalysis.timeSlots} baseline={patternAnalysis.tournamentAvgGoals} />
-            </section>
-
-            <section className="stats-section">
-              <div className="section-header">
-                <h3>📺 Viewership proxy</h3>
-                <span className="section-subtitle">Star nations &amp; headline teams</span>
-              </div>
-              <PatternBucketGrid buckets={patternAnalysis.viewership} baseline={patternAnalysis.tournamentAvgGoals} />
-            </section>
-
-            <div className="pattern-two-col">
-              <section className="stats-section">
-                <div className="section-header">
-                  <h3>📅 Weekend vs weekday</h3>
-                </div>
-                <PatternBucketGrid buckets={patternAnalysis.weekend} baseline={patternAnalysis.tournamentAvgGoals} compact />
-              </section>
-              <section className="stats-section">
-                <div className="section-header">
-                  <h3>🏠 Host nations</h3>
-                </div>
-                <PatternBucketGrid buckets={patternAnalysis.hostNation} baseline={patternAnalysis.tournamentAvgGoals} compact />
-              </section>
-            </div>
-
-            <section className="stats-section">
-              <div className="section-header">
-                <h3>⚔️ Rivalries &amp; ranking gap</h3>
-                <span className="section-subtitle">Derbies and mismatch theory</span>
-              </div>
-              <div className="pattern-two-col">
-                <PatternBucketGrid buckets={patternAnalysis.rivalries} baseline={patternAnalysis.tournamentAvgGoals} compact />
-                <PatternBucketGrid buckets={patternAnalysis.rankingGap} baseline={patternAnalysis.tournamentAvgGoals} compact />
-              </div>
-            </section>
-
-            <section className="stats-section">
-              <div className="section-header">
-                <h3>🌎 Venue region</h3>
-                <span className="section-subtitle">USA · Mexico · Canada</span>
-              </div>
-              <PatternBucketGrid buckets={patternAnalysis.regions} baseline={patternAnalysis.tournamentAvgGoals} />
-            </section>
-
-            <section className="stats-section">
-              <div className="section-header">
-                <h3>🎯 Upcoming — entertainment radar</h3>
-                <span className="section-subtitle">Pattern-weighted picks</span>
-              </div>
-              {patternAnalysis.upcoming.length > 0 ? (
-                <div className="pattern-upcoming-grid">
-                  {patternAnalysis.upcoming.map((m) => (
-                    <div key={m.id} className="pattern-upcoming-card">
-                      <div className="pattern-upcoming-top">
-                        <span className="pattern-teams">
-                          <TeamFlag team={m.teamA} size={18} /> {m.teamA}
-                          <span className="vs">vs</span>
-                          <TeamFlag team={m.teamB} size={18} /> {m.teamB}
-                        </span>
-                        <span className={`pattern-score ${m.entertainmentScore >= 70 ? 'hot' : m.entertainmentScore >= 50 ? 'warm' : 'cool'}`}>
-                          {m.entertainmentScore}
-                        </span>
-                      </div>
-                      <div className="pattern-upcoming-meta">
-                        <span>{fmtKickoff(m.kickoff)}</span>
-                        <span className="pattern-predicted">~{m.predictedGoals} goals</span>
-                      </div>
-                      <div className="pattern-signals">
-                        {m.signals.map((s) => (
-                          <span key={s} className="pattern-signal">{s}</span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="no-data">All group fixtures completed — knockout patterns coming soon.</p>
-              )}
-            </section>
-
-            <p className="pattern-disclaimer">
-              Patterns are descriptive, not guarantees. Viewership is estimated from star teams and primetime slots — not actual TV ratings.
-            </p>
           </div>
         )}
 
